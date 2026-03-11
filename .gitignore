@@ -31,6 +31,9 @@ obj/
 *.cache
 packages/
 
+# Node
+node_modules/
+
 # Go
 *.exe
 *.exe~

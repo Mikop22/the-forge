@@ -1,0 +1,8 @@
+{
+  "name": "pixelsmith-fal-bridge",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fal-ai/client": "^1.5.0"
+  }
+}
