@@ -2,7 +2,7 @@
 
 ## Model weights
 
-Pixelsmith uses large `.safetensors` model files that are not in the repo. Download them once after cloning:
+Pixelsmith uses the `terraria_weights.safetensors` model file, which is not in the repo. Download it once after cloning:
 
 ```bash
 cd agents/pixelsmith

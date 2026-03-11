@@ -74,7 +74,7 @@ cd agents
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install fal-client playwright scikit-learn requests
+pip install fal-client playwright scikit-learn
 playwright install chromium
 ```
 

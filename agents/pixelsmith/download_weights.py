@@ -10,18 +10,18 @@ Set the Google Drive file IDs below (from the share link) before running.
 
 import pathlib
 import sys
+import urllib.request
 
-# Replace these with your Google Drive file IDs.
+# Replace with your Google Drive file ID.
 # Share link format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
 WEIGHTS = {
-    "pixel-art-xl.safetensors": "",      # FILE_ID for pixel-art-xl
-    "terraria_weights.safetensors": "",  # FILE_ID for terraria_weights
-    "aziib_pixel_style_zit.safetensors": "",  # FILE_ID for aziib_pixel_style_zit
+    "terraria_weights.safetensors": "1NHyfX2AlNxebCByd1jSvMZzLnMCzGqnv",  # from share link
 }
 
 DEST_DIR = pathlib.Path(__file__).parent
 # Direct download URL for Google Drive (no confirmation page for small files)
 BASE_URL = "https://drive.google.com/uc?export=download&id={}"
+CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
 
 def main():
@@ -29,12 +29,6 @@ def main():
     if missing:
         print("Set Google Drive file IDs in WEIGHTS (this script) for:", ", ".join(missing))
         print("Get IDs from: Share → Copy link → id is the part between /d/ and /view")
-        sys.exit(1)
-
-    try:
-        import requests
-    except ImportError:
-        print("Install requests: pip install requests")
         sys.exit(1)
 
     DEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,12 +40,14 @@ def main():
         url = BASE_URL.format(file_id.strip())
         print(f"Downloading {fname}...")
         try:
-            resp = requests.get(url, stream=True, timeout=60)
-            resp.raise_for_status()
-            size = 0
-            with open(path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                size = 0
+                with open(path, "wb") as f:
+                    while True:
+                        chunk = resp.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
                         f.write(chunk)
                         size += len(chunk)
                         print(f"\r  {size / (1024*1024):.1f} MiB", end="")
