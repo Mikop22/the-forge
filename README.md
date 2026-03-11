@@ -55,32 +55,44 @@ FAL_IMAGE_TO_IMAGE_ENABLED=true
 | `OPENAI_API_KEY` | Powers the Architect (item design), Forge Master (code gen), and reference image approval |
 | `FAL_KEY` | Powers the Pixelsmith sprite generator via fal-ai FLUX |
 
-### 3. Python environment
+### 3. Model weights (Pixelsmith)
+
+Download the sprite model weights (hosted on Google Drive) into `agents/pixelsmith/`:
+
+```bash
+cd agents/pixelsmith
+# Edit download_weights.py and add your Google Drive file IDs, then:
+python download_weights.py
+```
+
+See `agents/README.md` for how to get the file IDs from your share links.
+
+### 4. Python environment
 
 ```bash
 cd agents
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install fal-client playwright scikit-learn
+pip install fal-client playwright scikit-learn requests
 playwright install chromium
 ```
 
-### 4. Node dependencies
+### 5. Node dependencies
 
 ```bash
 cd agents/pixelsmith
 npm install @fal-ai/client
 ```
 
-### 5. Go dependencies
+### 6. Go dependencies
 
 ```bash
 cd BubbleTeaTerminal
 go mod download
 ```
 
-### 6. ForgeConnector bridge mod (one-time)
+### 7. ForgeConnector bridge mod (one-time)
 
 This small tModLoader mod lets The Forge hot-reload items into your running game.
 

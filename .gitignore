@@ -48,6 +48,9 @@ node_modules/
 *.swo
 *~
 
+# Model weights (download via agents/pixelsmith/download_weights.py)
+*.safetensors
+
 # Misc
 *.log
 Thumbs.db

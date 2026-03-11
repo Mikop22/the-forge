@@ -1,5 +1,16 @@
 # Agents Runtime Notes
 
+## Model weights
+
+Pixelsmith uses large `.safetensors` model files that are not in the repo. Download them once after cloning:
+
+```bash
+cd agents/pixelsmith
+python download_weights.py
+```
+
+Before running, edit `download_weights.py` and set the Google Drive file IDs for each weight file (from the share links you get after uploading). The script will download them into `agents/pixelsmith/`.
+
 ## Reference-aware generation configuration
 
 Architect reference lookup uses Bing Images via Playwright (no API key needed).
