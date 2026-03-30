@@ -157,10 +157,11 @@ type model struct {
 
 	forgeManifest map[string]interface{} // full manifest from backend
 	forgeSprPath  string                 // sprite PNG path from backend
+	injectMode    bool                   // true = instant inject (template pool), false = legacy compile
 
 	bridgeAlive   bool   // forge_connector_alive.json present with live PID
 	injectErr     string // non-empty if command_trigger write failed
-	injectStatus  string // "reload_triggered", "reload_failed", "timeout", or ""
+	injectStatus  string // "reload_triggered", "reload_failed", "item_injected", "inject_failed", "timeout", or ""
 }
 
 const (
@@ -203,6 +204,7 @@ func writeUserRequest(prompt, tier, craftingStation string) error {
 	payload := map[string]string{
 		"prompt": prompt,
 		"tier":   tierToKey(tier),
+		"mode":   "instant",
 	}
 	if craftingStation != "" && craftingStation != "Auto" {
 		payload["crafting_station"] = craftingStation
@@ -227,6 +229,7 @@ type pipelineStatus struct {
 	stageLabel string
 	manifest   map[string]interface{}
 	spritePath string
+	injectMode bool
 }
 
 func readGenerationStatus() pipelineStatus {
@@ -252,6 +255,9 @@ func readGenerationStatus() pipelineStatus {
 		ps.manifest = manifest
 	}
 	ps.spritePath, _ = result["sprite_path"].(string)
+	if im, ok := result["inject_mode"].(bool); ok {
+		ps.injectMode = im
+	}
 	return ps
 }
 
@@ -559,6 +565,7 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.forgeItemName = ps.itemName
 			m.forgeManifest = ps.manifest
 			m.forgeSprPath = ps.spritePath
+			m.injectMode = ps.injectMode
 			m.heat = 100
 			return m, func() tea.Msg { return forgeDoneMsg{} }
 		case "error":
@@ -620,6 +627,10 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectorStatusMsg:
 		m.injecting = false
 		m.injectStatus = msg.status
+		if msg.status == "item_injected" {
+			// For instant inject, auto-clear the forge_inject.json to prevent re-inject
+			_ = os.Remove(filepath.Join(modSourcesDir(), "forge_inject.json"))
+		}
 		return m, nil
 	}
 
@@ -635,6 +646,13 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.injecting = true
 			m.injectErr = ""
 			m.injectStatus = ""
+			if m.injectMode {
+				// Instant inject: forge_inject.json was already written by the orchestrator.
+				// Just clear stale status and start polling for connector response.
+				_ = os.Remove(filepath.Join(modSourcesDir(), "forge_connector_status.json"))
+				return m, pollConnectorStatusCmd(0)
+			}
+			// Legacy: trigger mod reload via command_trigger.json.
 			injectCmd := func() tea.Msg {
 				return injectDoneMsg{err: writeCommandTrigger()}
 			}
@@ -806,7 +824,17 @@ func (m model) stagingView() string {
 
 	switch {
 	case m.injecting:
-		headerLines = append(headerLines, "", styles.Injecting.Render("⟳ Waiting for Terraria..."))
+		if m.injectMode {
+			headerLines = append(headerLines, "", styles.Injecting.Render("⟳ Injecting into Terraria..."))
+		} else {
+			headerLines = append(headerLines, "", styles.Injecting.Render("⟳ Waiting for Terraria..."))
+		}
+	case m.injectStatus == "item_injected":
+		headerLines = append(headerLines, "", styles.Success.Render("✔ Item appeared in your inventory!"))
+		headerLines = append(headerLines, styles.Hint.Render("[C] Craft Another"))
+	case m.injectStatus == "inject_failed":
+		headerLines = append(headerLines, "", styles.Error.Render("✘ Injection failed"))
+		headerLines = append(headerLines, styles.Hint.Render("[C] Craft Another   [ENTER] Retry"))
 	case m.injectStatus == "reload_triggered":
 		headerLines = append(headerLines, "", styles.Success.Render("✔ Mod reloading in Terraria"))
 		headerLines = append(headerLines, styles.Hint.Render("[C] Craft Another"))
@@ -817,7 +845,11 @@ func (m model) stagingView() string {
 		headerLines = append(headerLines, "", styles.Error.Render("✘ No response from Terraria"))
 		headerLines = append(headerLines, styles.Hint.Render("[C] Craft Another   [ENTER] Retry"))
 	default:
-		headerLines = append(headerLines, "", styles.Hint.Render("[C] Craft Another   [ENTER] Execute"))
+		if m.injectMode {
+			headerLines = append(headerLines, "", styles.Hint.Render("[C] Craft Another   [ENTER] Inject"))
+		} else {
+			headerLines = append(headerLines, "", styles.Hint.Render("[C] Craft Another   [ENTER] Execute"))
+		}
 	}
 
 	return strings.Join(headerLines, "\n")
@@ -885,6 +917,7 @@ func (m *model) resetForCraftAnother() {
 	m.craftingStation = ""
 	m.forgeManifest = nil
 	m.forgeSprPath = ""
+	m.injectMode = false
 	m.bridgeAlive = false
 	m.injectErr = ""
 	m.injectStatus = ""
