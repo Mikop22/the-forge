@@ -4,8 +4,11 @@ using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using ReLogic.Content;
 using Terraria;
+using Terraria.GameContent;
 using Terraria.ID;
 using Terraria.ModLoader;
 using ForgeConnector.Content.Items;
@@ -26,7 +29,7 @@ namespace ForgeConnector
         private static int _injectRequested = 0;
         private static string _pendingInjectJson = "";
 
-        private FileSystemWatcher? _watcher;
+        private FileSystemWatcher _watcher;
         private string _modSourcesDir = string.Empty;
         private string _triggerPath = string.Empty;
         private string _injectPath = string.Empty;
@@ -129,7 +132,20 @@ namespace ForgeConnector
                 WriteStatus(triggered ? "reload_triggered" : "reload_failed");
             }
 
-            // Handle instant inject request
+            TryProcessInject();
+        }
+
+        /// <summary>
+        /// UpdateUI runs even when the game is autopaused (e.g. player alt-tabbed
+        /// to the TUI). This ensures inject processing isn't blocked by autopause.
+        /// </summary>
+        public override void UpdateUI(GameTime gameTime)
+        {
+            TryProcessInject();
+        }
+
+        private void TryProcessInject()
+        {
             if (Interlocked.Exchange(ref _injectRequested, 0) == 1)
             {
                 string json = Interlocked.Exchange(ref _pendingInjectJson, "");
@@ -260,21 +276,33 @@ namespace ForgeConnector
                     data.ShootProjectileSlot = mechanics.TryGetProperty("custom_projectile", out var cp) && cp.GetBoolean() ? 0 : -1;
                 }
 
-                // Map sub_type to damage class and use style
+                // Map sub_type to damage class and use style.
+                // Must stay in sync with the valid sub_types listed in agents/architect/prompts.py.
                 data.DamageClassName = data.SubType switch
                 {
-                    "Gun" or "Bow" => "Ranged",
-                    "Staff" => "Magic",
-                    "Summon" => "Summon",
+                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
+                        or "Shotgun" or "Launcher" or "Cannon" => "Ranged",
+                    "Staff" or "Wand" or "Tome" or "Spellbook" => "Magic",
                     _ => "Melee",
                 };
                 data.UseStyleName = data.SubType switch
                 {
-                    "Gun" or "Bow" or "Staff" => "Shoot",
+                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
+                        or "Shotgun" or "Launcher" or "Cannon"
+                        or "Staff" or "Wand" or "Tome" or "Spellbook" => "Shoot",
+                    "Spear" or "Lance" => "Thrust",
                     _ => "Swing",
                 };
                 data.NoMelee = data.UseStyleName == "Shoot";
                 data.ShootSpeed = data.UseStyleName == "Shoot" ? 10f : 0f;
+
+                // Derive tool power from sub_type, scaled by damage as a tier proxy
+                if (data.SubType is "Pickaxe" or "Hamaxe")
+                    data.PickPower = Math.Clamp(data.Damage * 3, 35, 225);
+                if (data.SubType is "Axe" or "Hamaxe")
+                    data.AxePower = Math.Clamp(data.Damage / 2, 7, 35);
+                if (data.SubType is "Hammer" or "Hamaxe")
+                    data.HammerPower = Math.Clamp(data.Damage + 20, 25, 100);
             }
 
             if (root.TryGetProperty("item_name", out var rootName))
@@ -312,8 +340,20 @@ namespace ForgeConnector
                 using var stream = File.OpenRead(path);
                 var tex = Texture2D.FromStream(Main.graphics.GraphicsDevice, stream);
                 ForgeManifestStore.SetItemTexture(slot, tex);
+
+                int typeId = ForgeManifestStore.GetItemTypeId(slot);
+                if (typeId > 0)
+                {
+                    if (SetTextureAssetValue(TextureAssets.Item, typeId, tex))
+                        Mod.Logger.Info($"[ForgeConnector] Loaded item texture: {path} ({tex.Width}x{tex.Height}) → type {typeId}");
+                    else
+                        Mod.Logger.Warn($"[ForgeConnector] Item texture loaded to ManifestStore but TextureAssets reflection failed for type {typeId}");
+                }
             }
-            catch { /* best-effort */ }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] LoadItemTexture failed: " + ex.Message);
+            }
         }
 
         private void LoadProjectileTexture(int slot, string path)
@@ -323,8 +363,70 @@ namespace ForgeConnector
                 using var stream = File.OpenRead(path);
                 var tex = Texture2D.FromStream(Main.graphics.GraphicsDevice, stream);
                 ForgeManifestStore.SetProjectileTexture(slot, tex);
+
+                int typeId = ForgeManifestStore.GetProjectileTypeId(slot);
+                if (typeId > 0)
+                {
+                    if (SetTextureAssetValue(TextureAssets.Projectile, typeId, tex))
+                        Mod.Logger.Info($"[ForgeConnector] Loaded projectile texture: {path} ({tex.Width}x{tex.Height}) → type {typeId}");
+                    else
+                        Mod.Logger.Warn($"[ForgeConnector] Projectile texture loaded to ManifestStore but TextureAssets reflection failed for type {typeId}");
+                }
             }
-            catch { /* best-effort */ }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] LoadProjectileTexture failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Uses reflection to replace the texture inside an existing Asset&lt;Texture2D&gt;.
+        /// This ensures ALL rendering paths (inventory, hotbar, melee swing, world drop)
+        /// use our custom sprite instead of the 1x1 placeholder.
+        /// </summary>
+        private bool SetTextureAssetValue(Asset<Texture2D>[] assetArray, int index, Texture2D tex)
+        {
+            if (index < 0 || index >= assetArray.Length)
+                return false;
+
+            var asset = assetArray[index];
+            if (asset == null)
+                return false;
+
+            var assetType = asset.GetType();
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+
+            // ReLogic.Content.Asset<T> stores the value — field name varies by version
+            var valueField = assetType.GetField("ownValue", flags)
+                          ?? assetType.GetField("_value", flags)
+                          ?? assetType.GetField("value", flags);
+
+            if (valueField != null)
+            {
+                valueField.SetValue(asset, tex);
+            }
+            else
+            {
+                Mod.Logger.Warn("[ForgeConnector] Could not find Asset<T> value field via reflection");
+                return false;
+            }
+
+            // Mark the asset as loaded so the Value getter returns our texture
+            var stateField = assetType.GetField("_state", flags)
+                          ?? assetType.GetField("state", flags);
+            if (stateField != null && stateField.FieldType.IsEnum)
+            {
+                object loadedState;
+                try { loadedState = Enum.Parse(stateField.FieldType, "Loaded"); }
+                catch (Exception ex)
+                {
+                    Mod.Logger.Warn("[ForgeConnector] Enum.Parse('Loaded') failed, falling back to ordinal 2: " + ex.Message);
+                    loadedState = Enum.ToObject(stateField.FieldType, 2);
+                }
+                stateField.SetValue(asset, loadedState);
+            }
+
+            return true;
         }
 
         // ------------------------------------------------------------------
@@ -374,7 +476,10 @@ namespace ForgeConnector
 
                 Interlocked.Exchange(ref _reloadRequested, 1);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] HandleCommandTrigger failed: " + ex.Message);
+            }
         }
 
         private void HandleInjectTrigger()
@@ -393,7 +498,10 @@ namespace ForgeConnector
                 Interlocked.Exchange(ref _pendingInjectJson, json);
                 Interlocked.Exchange(ref _injectRequested, 1);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] HandleInjectTrigger failed: " + ex.Message);
+            }
         }
 
         // ------------------------------------------------------------------

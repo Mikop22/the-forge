@@ -33,7 +33,7 @@ namespace ForgeConnector
         // Damage class: "Melee", "Ranged", "Magic", "Summon"
         public string DamageClassName { get; set; } = "Melee";
 
-        // Use style: "Swing", "Shoot"
+        // Use style: "Swing", "Shoot", "Thrust"
         public string UseStyleName { get; set; } = "Swing";
 
         // Combat
@@ -48,6 +48,11 @@ namespace ForgeConnector
         // Healing
         public int HealLife { get; set; } = 0;
         public int HealMana { get; set; } = 0;
+
+        // Tool power
+        public int PickPower { get; set; } = 0;
+        public int AxePower { get; set; } = 0;   // internal value; display = value * 5
+        public int HammerPower { get; set; } = 0;
 
         // Misc
         public int Defense { get; set; } = 0;
@@ -141,8 +146,9 @@ namespace ForgeConnector
 
         public static void Clear()
         {
-            foreach (var tex in _itemTextures.Values) tex?.Dispose();
-            foreach (var tex in _projectileTextures.Values) tex?.Dispose();
+            // Don't Dispose textures here — Unload() runs on a worker thread
+            // and Texture2D.Dispose() requires the main thread (FNA ThreadCheck).
+            // The textures are tiny and will be reclaimed on process/device reset.
             _items.Clear();
             _projectiles.Clear();
             _itemTextures.Clear();

@@ -642,7 +642,7 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Trigger written successfully — poll for connector confirmation.
 		return m, pollConnectorStatusCmd(0)
 	case pollConnectorStatusMsg:
-		const maxAttempts = 20 // 10 seconds at 500ms intervals
+		const maxAttempts = 60 // 30 seconds at 500ms intervals
 		if status := readConnectorStatus(); status != "" {
 			return m, func() tea.Msg { return connectorStatusMsg{status: status} }
 		}

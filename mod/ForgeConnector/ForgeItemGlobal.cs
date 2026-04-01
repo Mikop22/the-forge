@@ -32,6 +32,9 @@ namespace ForgeConnector
             if (data == null)
                 return;
 
+            if (!string.IsNullOrEmpty(data.DisplayName))
+                item.SetNameOverride(data.DisplayName);
+
             item.width = data.Width;
             item.height = data.Height;
             item.scale = data.Scale;
@@ -51,12 +54,16 @@ namespace ForgeConnector
             item.consumable = data.Consumable;
             item.maxStack = data.MaxStack;
 
+            // Tool power
+            item.pick = data.PickPower;
+            item.axe = data.AxePower;
+            item.hammer = data.HammerPower;
+
             // Damage class
             item.DamageType = data.DamageClassName switch
             {
                 "Ranged" => DamageClass.Ranged,
                 "Magic" => DamageClass.Magic,
-                "Summon" => DamageClass.Summon,
                 _ => DamageClass.Melee,
             };
 
@@ -64,6 +71,7 @@ namespace ForgeConnector
             item.useStyle = data.UseStyleName switch
             {
                 "Shoot" => ItemUseStyleID.Shoot,
+                "Thrust" => ItemUseStyleID.Thrust,
                 "Drink" => ItemUseStyleID.DrinkLiquid,
                 "EatFood" => ItemUseStyleID.EatFood,
                 _ => ItemUseStyleID.Swing,
@@ -73,6 +81,7 @@ namespace ForgeConnector
             item.UseSound = data.UseStyleName switch
             {
                 "Shoot" => SoundID.Item11,
+                "Thrust" => SoundID.Item1,
                 _ => SoundID.Item1,
             };
 

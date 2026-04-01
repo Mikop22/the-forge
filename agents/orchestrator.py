@@ -47,7 +47,6 @@ _MOD_SOURCES = _HOME / "Library" / "Application Support" / "Terraria" / "tModLoa
 REQUEST_FILE = _MOD_SOURCES / "user_request.json"
 STATUS_FILE = _MOD_SOURCES / "generation_status.json"
 HEARTBEAT_FILE = _MOD_SOURCES / "orchestrator_alive.json"
-INJECT_FILE = _MOD_SOURCES / "forge_inject.json"
 
 # Where Pixelsmith drops sprites and Forge Master drops code
 _AGENTS_ROOT = Path(__file__).resolve().parent
@@ -262,25 +261,8 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
         )
     log.info("✓ Artist complete")
 
-    # --- Step D: Write forge_inject.json (replaces Coder + Gatekeeper) -
-    log.info("▸ Writing forge_inject.json for ForgeConnector")
+    # --- Step D: Signal success (TUI writes forge_inject.json on confirm) -
     _set_stage("Preparing injection...", 80)
-
-    inject_payload = {
-        "action": "inject",
-        "item_name": item_name,
-        "manifest": manifest,
-        "sprite_path": str(art_result.get("item_sprite_path", "")),
-        "projectile_sprite_path": art_result.get("projectile_sprite_path") or "",
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-
-    tmp = INJECT_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(inject_payload, indent=2), encoding="utf-8")
-    tmp.replace(INJECT_FILE)
-    log.info("✓ forge_inject.json written")
-
-    # --- Step E: signal success ----------------------------------------
     _set_ready(
         item_name,
         manifest=manifest,

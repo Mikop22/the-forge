@@ -13,8 +13,8 @@ a human-readable `display_name`. Write a short `tooltip` with lore or effect inf
 which describes the **physical weapon shape**, NOT the damage class. \
 Valid sub_types: "Sword", "Broadsword", "Shortsword", "Bow", "Repeater", "Staff", \
 "Wand", "Tome", "Spellbook", "Gun", "Rifle", "Pistol", "Shotgun", "Launcher", \
-"Cannon", "Spear", "Lance", "Axe", "Pickaxe", "Hammer", "Hamaxe", "Yoyo", "Flail". \
-NEVER use a damage class (e.g. "Magic", "Melee", "Ranged", "Summon") as the sub_type.
+"Cannon", "Spear", "Lance", "Axe", "Pickaxe", "Hammer", "Hamaxe". \
+NEVER use "Yoyo", "Flail", "Summon", or a damage class (e.g. "Magic", "Melee", "Ranged") as the sub_type.
 3. **Stats**: Propose numeric stats. The selected tier constrains these ranges:
    - Damage: {damage_min}–{damage_max}
    - UseTime: {use_time_min}–{use_time_max}
