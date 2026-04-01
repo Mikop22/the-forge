@@ -51,6 +51,10 @@ node_modules/
 # Model weights (download via agents/pixelsmith/download_weights.py)
 *.safetensors
 
+# Worktrees
+.worktrees/
+.superpowers/
+
 # Misc
 *.log
 Thumbs.db
