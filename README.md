@@ -36,7 +36,7 @@ The entire pipeline runs from a single terminal UI. You pick your weapon idea, c
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/yourusername/the-forge.git
+git clone https://github.com/mikop22/the-forge.git
 cd the-forge
 ```
 
