@@ -62,7 +62,7 @@ type craftedItem struct {
 	label           string
 	tier            string
 	damageClass     string
-	styleChoice     string
+	weaponType     string
 	projectile      string
 	craftingStation string
 	stats           itemStats
@@ -74,6 +74,35 @@ type wizardStep struct {
 	options  []optionItem
 }
 
+// weaponTypeOptions maps each damage class to its Terraria weapon sub-types.
+var weaponTypeOptions = map[string][]optionItem{
+	"Melee": {
+		{title: "Sword", desc: "Broadsword with wide swing arc"},
+		{title: "Shortsword", desc: "Quick stab attack with short reach"},
+		{title: "Spear", desc: "Long thrust with piercing reach"},
+		{title: "Yoyo", desc: "Thrown disc that hangs mid-air"},
+		{title: "Flail", desc: "Swung ball-and-chain weapon"},
+		{title: "Axe", desc: "Overhead chop, doubles as tool"},
+		{title: "Hammer", desc: "Heavy slam, wall-breaking power"},
+	},
+	"Ranged": {
+		{title: "Bow", desc: "Fires arrows with arc trajectory"},
+		{title: "Repeater", desc: "Hardmode bow with rapid arrow fire"},
+		{title: "Gun", desc: "Bullet weapon, balanced fire rate"},
+		{title: "Rifle", desc: "High damage per shot, slow fire"},
+		{title: "Shotgun", desc: "Fires spread of bullets at once"},
+		{title: "Launcher", desc: "Fires rockets and explosives"},
+	},
+	"Magic": {
+		{title: "Staff", desc: "Fires magic projectile from tip"},
+		{title: "Wand", desc: "Light caster with quick fire rate"},
+		{title: "Tome", desc: "Held book that casts on use"},
+		{title: "Spellbook", desc: "Held book with unique spell effect"},
+	},
+}
+
+// wizardSteps defines the static wizard steps. Step index 2 (Weapon Type)
+// is populated dynamically based on the chosen damage class.
 var wizardSteps = []wizardStep{
 	{
 		question: "Choose Tier",
@@ -87,27 +116,14 @@ var wizardSteps = []wizardStep{
 	{
 		question: "Choose Class",
 		options: []optionItem{
-			{title: "Melee", desc: "Close-range burst and direct engagement"},
-			{title: "Ranged", desc: "Projectile pressure from safe distance"},
-			{title: "Magic", desc: "Mana-driven effects and spell identity"},
+			{title: "Melee", desc: "Swords, spears, flails — close combat"},
+			{title: "Ranged", desc: "Bows, guns, launchers — ranged combat"},
+			{title: "Magic", desc: "Staves, tomes, wands — mana combat"},
 		},
 	},
 	{
-		question: "Choose Style",
-		options: []optionItem{
-			{title: "Swing", desc: "Wide arc attacks for crowd control"},
-			{title: "Stab", desc: "Precise thrust pattern with reach focus"},
-			{title: "Hold", desc: "Channel behavior while key is held"},
-		},
-	},
-	{
-		question: "Choose Projectile",
-		options: []optionItem{
-			{title: "None", desc: "Purely melee interaction"},
-			{title: "Standard Shot", desc: "Basic projectile companion attack"},
-			{title: "Beam Slash", desc: "Arc beam emission on swing timing"},
-			{title: "Thrown", desc: "Throwable behavior with return logic"},
-		},
+		question: "Choose Weapon Type",
+		options:  nil, // filled dynamically by configureWizardStep
 	},
 	{
 		question: "Choose Crafting Station",
@@ -137,7 +153,7 @@ type model struct {
 	prompt          string
 	tier            string
 	damageClass     string
-	styleChoice     string
+	weaponType     string
 	projectile      string
 	craftingStation string
 
@@ -195,7 +211,7 @@ func tierToKey(tier string) string {
 	}
 }
 
-func writeUserRequest(prompt, tier, craftingStation string) error {
+func writeUserRequest(prompt, tier, subType, craftingStation string) error {
 	dir := modSourcesDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -203,6 +219,9 @@ func writeUserRequest(prompt, tier, craftingStation string) error {
 	payload := map[string]string{
 		"prompt": prompt,
 		"tier":   tierToKey(tier),
+	}
+	if subType != "" {
+		payload["sub_type"] = subType
 	}
 	if craftingStation != "" && craftingStation != "Auto" {
 		payload["crafting_station"] = craftingStation
@@ -356,7 +375,7 @@ func initialModel() model {
 	delegate := list.NewDefaultDelegate()
 	modeItems := []list.Item{
 		optionItem{title: "Auto-Forge", desc: "AI decides balance & mechanics"},
-		optionItem{title: "Manual Override", desc: "Configure tier, class, and style"},
+		optionItem{title: "Manual Override", desc: "Pick tier, class, and weapon type"},
 	}
 	modeList := list.New(modeItems, delegate, 56, 8)
 	modeList.SetFilteringEnabled(false)
@@ -460,7 +479,7 @@ func (m model) updateMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.wizardIndex = 0
 				m.tier = ""
 				m.damageClass = ""
-				m.styleChoice = ""
+				m.weaponType = ""
 				m.projectile = ""
 				m.configureWizardStep()
 				m.state = screenWizard
@@ -468,7 +487,7 @@ func (m model) updateMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.tier = "Auto"
 			m.damageClass = ""
-			m.styleChoice = ""
+			m.weaponType = ""
 			m.projectile = ""
 			return m.enterForge()
 		}
@@ -494,10 +513,8 @@ func (m model) updateWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 1:
 				m.damageClass = ""
 			case 2:
-				m.styleChoice = ""
+				m.weaponType = ""
 			case 3:
-				m.projectile = ""
-			case 4:
 				m.craftingStation = ""
 			}
 			m.configureWizardStep()
@@ -510,10 +527,8 @@ func (m model) updateWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 1:
 				m.damageClass = selected.title
 			case 2:
-				m.styleChoice = selected.title
+				m.weaponType = selected.title
 			case 3:
-				m.projectile = selected.title
-			case 4:
 				m.craftingStation = selected.title
 			}
 			m.wizardIndex++
@@ -750,7 +765,7 @@ func (m model) stagingView() string {
 
 		// Item name
 		headerLines = append(headerLines, styles.Inventory.Render(m.revealItem(latest.label)))
-		if m.revealPhase >= 3 && (latest.damageClass != "" || latest.styleChoice != "" || latest.projectile != "") {
+		if m.revealPhase >= 3 && (latest.damageClass != "" || latest.weaponType != "" || latest.projectile != "") {
 			meta := buildMetaLine(latest)
 			if meta != "" {
 				headerLines = append(headerLines, styles.Meta.Render(meta))
@@ -825,13 +840,25 @@ func (m model) stagingView() string {
 
 func (m *model) configureWizardStep() {
 	step := wizardSteps[m.wizardIndex]
-	items := make([]list.Item, 0, len(step.options))
-	for _, option := range step.options {
+
+	// Step 2 (Weapon Type) is populated dynamically from the chosen class.
+	options := step.options
+	if m.wizardIndex == 2 {
+		if opts, ok := weaponTypeOptions[m.damageClass]; ok {
+			options = opts
+		} else {
+			// Fallback: show Melee types if class is somehow unset.
+			options = weaponTypeOptions["Melee"]
+		}
+	}
+
+	items := make([]list.Item, 0, len(options))
+	for _, option := range options {
 		items = append(items, option)
 	}
 	m.wizardList.SetItems(items)
 	m.wizardList.Select(0)
-	m.wizardList.SetHeight(max(12, len(step.options)*2+2))
+	m.wizardList.SetHeight(max(12, len(options)*2+2))
 	m.wizardList.Title = step.question
 }
 
@@ -848,11 +875,12 @@ func (m model) enterForge() (tea.Model, tea.Cmd) {
 
 	prompt := m.prompt
 	tier := m.tier
+	subType := m.weaponType
 	craftingStation := m.craftingStation
 	startCmd := func() tea.Msg {
 		// Clear any stale status from a previous run.
 		_ = os.Remove(filepath.Join(modSourcesDir(), "generation_status.json"))
-		if err := writeUserRequest(prompt, tier, craftingStation); err != nil {
+		if err := writeUserRequest(prompt, tier, subType, craftingStation); err != nil {
 			return forgeErrMsg{message: "Failed to write request: " + err.Error()}
 		}
 		return pollStatusMsg{}
@@ -871,7 +899,7 @@ func (m *model) resetForCraftAnother() {
 	m.prompt = ""
 	m.tier = ""
 	m.damageClass = ""
-	m.styleChoice = ""
+	m.weaponType = ""
 	m.projectile = ""
 	m.wizardIndex = 0
 	m.errMsg = ""
@@ -931,7 +959,7 @@ func (m model) buildCraftedItem() craftedItem {
 		label:           label,
 		tier:            m.tier,
 		damageClass:     m.damageClass,
-		styleChoice:     m.styleChoice,
+		weaponType:     m.weaponType,
 		projectile:      m.projectile,
 		craftingStation: m.craftingStation,
 		stats:           stats,
@@ -944,8 +972,8 @@ func buildMetaLine(item craftedItem) string {
 	if item.damageClass != "" {
 		parts = append(parts, item.damageClass)
 	}
-	if item.styleChoice != "" {
-		parts = append(parts, item.styleChoice)
+	if item.weaponType != "" {
+		parts = append(parts, item.weaponType)
 	}
 	if item.projectile != "" && item.projectile != "None" {
 		parts = append(parts, item.projectile)
@@ -1169,8 +1197,8 @@ func (m model) emberStrip() string {
 }
 
 func (m model) sigilColumn() string {
-	slots := []string{"Tier", "Class", "Style", "Proj", "Forge"}
-	values := []string{m.tier, m.damageClass, m.styleChoice, m.projectile, m.craftingStation}
+	slots := []string{"Tier", "Class", "Weapon", "Forge"}
+	values := []string{m.tier, m.damageClass, m.weaponType, m.craftingStation}
 	lines := []string{styles.Meta.Render("Sigils")}
 	for i := range slots {
 		mark := "○"

@@ -54,7 +54,7 @@ class ArchitectAgent:
             max_retries=1,
         )
 
-    def generate_manifest(self, prompt: str, tier: str, crafting_station: str | None = None) -> dict:
+    def generate_manifest(self, prompt: str, tier: str, sub_type: str | None = None, crafting_station: str | None = None) -> dict:
         """Generate a fully validated item manifest.
 
         Parameters
@@ -64,6 +64,12 @@ class ArchitectAgent:
         tier : str
             One of ``Tier1_Starter``, ``Tier2_Dungeon``, ``Tier3_Hardmode``,
             ``Tier4_Endgame``.
+        sub_type : str | None
+            Explicit weapon sub-type chosen by the user in the Manual Override
+            wizard (e.g. ``"Sword"``, ``"Bow"``, ``"Staff"``).  When provided
+            the LLM's chosen sub_type is overridden.
+        crafting_station : str | None
+            Crafting station override from the wizard.
 
         Returns
         -------
@@ -86,9 +92,17 @@ class ArchitectAgent:
         crafting = resolve_crafting(prompt, tier, crafting_station)
 
         # 2. Invoke the LLM chain
+        sub_type_directive = ""
+        if sub_type:
+            sub_type_directive = (
+                f'Weapon sub_type is locked to "{sub_type}". '
+                f"You MUST set sub_type to exactly \"{sub_type}\"."
+            )
+
         llm_result: LLMItemOutput = self._chain.invoke({
             "user_prompt": prompt,
             "selected_tier": tier,
+            "sub_type_directive": sub_type_directive,
             "damage_min": tier_data["damage"][0],
             "damage_max": tier_data["damage"][1],
             "use_time_min": tier_data["use_time"][0],
@@ -103,6 +117,11 @@ class ArchitectAgent:
         for key in ("crafting_material", "crafting_cost", "crafting_tile"):
             if not llm_crafting.get(key):
                 data["mechanics"][key] = crafting[key]
+
+        # 3b. Honour explicit weapon sub-type from the Manual Override wizard.
+        if sub_type:
+            data["sub_type"] = sub_type
+
         reference_data = self._reference_policy.resolve(
             prompt=prompt,
             reference_needed=bool(data.get("reference_needed", False)),

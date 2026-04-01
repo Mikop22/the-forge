@@ -65,7 +65,8 @@ extra text."""
 
 HUMAN_PROMPT = """\
 User idea: {user_prompt}
-Selected Tier: {selected_tier}"""
+Selected Tier: {selected_tier}
+{sub_type_directive}"""
 
 
 def build_prompt() -> ChatPromptTemplate:
