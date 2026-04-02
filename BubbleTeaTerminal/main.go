@@ -155,9 +155,10 @@ type model struct {
 	stageLabel     string // current pipeline stage label
 	stageTargetPct int    // target heat % from pipeline status
 
-	forgeManifest map[string]interface{} // full manifest from backend
-	forgeSprPath  string                 // sprite PNG path from backend
-	injectMode    bool                   // true = instant inject (template pool), false = legacy compile
+	forgeManifest  map[string]interface{} // full manifest from backend
+	forgeSprPath   string                 // sprite PNG path from backend
+	forgeProjPath  string                 // projectile sprite PNG path from backend
+	injectMode     bool                   // true = instant inject (template pool), false = legacy compile
 
 	bridgeAlive   bool   // forge_connector_alive.json present with live PID
 	injectErr     string // non-empty if command_trigger write failed
@@ -222,14 +223,15 @@ func writeUserRequest(prompt, tier, craftingStation string) error {
 }
 
 type pipelineStatus struct {
-	status     string
-	itemName   string
-	errMsg     string
-	stagePct   int
-	stageLabel string
-	manifest   map[string]interface{}
-	spritePath string
-	injectMode bool
+	status              string
+	itemName            string
+	errMsg              string
+	stagePct            int
+	stageLabel          string
+	manifest            map[string]interface{}
+	spritePath          string
+	projectileSpritePath string
+	injectMode          bool
 }
 
 func readGenerationStatus() pipelineStatus {
@@ -255,6 +257,7 @@ func readGenerationStatus() pipelineStatus {
 		ps.manifest = manifest
 	}
 	ps.spritePath, _ = result["sprite_path"].(string)
+	ps.projectileSpritePath, _ = result["projectile_sprite_path"].(string)
 	if im, ok := result["inject_mode"].(bool); ok {
 		ps.injectMode = im
 	}
@@ -311,7 +314,7 @@ func writeCommandTrigger() error {
 }
 
 // writeInjectFile writes forge_inject.json from the TUI's stored manifest data.
-func writeInjectFile(manifest map[string]interface{}, itemName, spritePath string) error {
+func writeInjectFile(manifest map[string]interface{}, itemName, spritePath, projectileSpritePath string) error {
 	dir := modSourcesDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -321,7 +324,7 @@ func writeInjectFile(manifest map[string]interface{}, itemName, spritePath strin
 		"item_name":             itemName,
 		"manifest":              manifest,
 		"sprite_path":           spritePath,
-		"projectile_sprite_path": "",
+		"projectile_sprite_path": projectileSpritePath,
 		"timestamp":             time.Now().UTC().Format(time.RFC3339),
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
@@ -591,6 +594,7 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.forgeItemName = ps.itemName
 			m.forgeManifest = ps.manifest
 			m.forgeSprPath = ps.spritePath
+			m.forgeProjPath = ps.projectileSpritePath
 			m.injectMode = ps.injectMode
 			m.heat = 100
 			return m, func() tea.Msg { return forgeDoneMsg{} }
@@ -677,7 +681,7 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// The orchestrator's copy may have been consumed by a prior attempt.
 				dir := modSourcesDir()
 				_ = os.Remove(filepath.Join(dir, "forge_connector_status.json"))
-				if err := writeInjectFile(m.forgeManifest, m.forgeItemName, m.forgeSprPath); err != nil {
+				if err := writeInjectFile(m.forgeManifest, m.forgeItemName, m.forgeSprPath, m.forgeProjPath); err != nil {
 					m.injecting = false
 					m.injectErr = err.Error()
 					return m, nil
@@ -949,6 +953,7 @@ func (m *model) resetForCraftAnother() {
 	m.craftingStation = ""
 	m.forgeManifest = nil
 	m.forgeSprPath = ""
+	m.forgeProjPath = ""
 	m.injectMode = false
 	m.bridgeAlive = false
 	m.injectErr = ""

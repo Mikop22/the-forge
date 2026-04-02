@@ -294,7 +294,9 @@ namespace ForgeConnector
                     _ => "Swing",
                 };
                 data.NoMelee = data.UseStyleName == "Shoot";
-                data.ShootSpeed = data.UseStyleName == "Shoot" ? 10f : 0f;
+                // Shoot-style weapons always need shoot speed; melee weapons with
+                // projectiles (e.g. Terra Blade) also need nonzero shoot speed.
+                data.ShootSpeed = (data.UseStyleName == "Shoot" || data.ShootProjectileSlot >= 0) ? 10f : 0f;
 
                 // Derive tool power from sub_type, scaled by damage as a tier proxy
                 if (data.SubType is "Pickaxe" or "Hamaxe")

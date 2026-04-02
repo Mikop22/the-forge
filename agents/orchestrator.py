@@ -87,7 +87,7 @@ def _set_stage(label: str, pct: int) -> None:
 
 
 def _set_ready(item_name: str, manifest: dict | None = None, sprite_path: str = "",
-               inject_mode: bool = False) -> None:
+               projectile_sprite_path: str = "", inject_mode: bool = False) -> None:
     _write_status({
         "status": "ready",
         "stage_pct": 100,
@@ -95,6 +95,7 @@ def _set_ready(item_name: str, manifest: dict | None = None, sprite_path: str = 
         "message": "Ready for injection." if inject_mode else "Compilation successful. Waiting for user...",
         "manifest": manifest or {},
         "sprite_path": sprite_path,
+        "projectile_sprite_path": projectile_sprite_path,
         "inject_mode": inject_mode,
     })
 
@@ -211,6 +212,7 @@ async def run_pipeline(request: dict[str, Any]) -> None:
         gate_result.get("item_name", item_name),
         manifest=manifest,
         sprite_path=str(art_result.get("item_sprite_path", "")),
+        projectile_sprite_path=str(art_result.get("projectile_sprite_path") or ""),
     )
     log.info("★ Pipeline complete for %s", item_name)
 
@@ -267,6 +269,7 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
         item_name,
         manifest=manifest,
         sprite_path=str(art_result.get("item_sprite_path", "")),
+        projectile_sprite_path=str(art_result.get("projectile_sprite_path") or ""),
         inject_mode=True,
     )
     log.info("★ Instant pipeline complete for %s", item_name)
