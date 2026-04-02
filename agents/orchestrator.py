@@ -139,6 +139,31 @@ def _import_instant_agents():
 # Pipeline
 # ---------------------------------------------------------------------------
 
+def _request_content_type(request: dict[str, Any]) -> str:
+    return str(request.get("content_type") or "Weapon")
+
+
+def _request_sub_type(request: dict[str, Any]) -> str:
+    return str(request.get("sub_type") or "Sword")
+
+
+def _prepare_preview_manifest(request: dict[str, Any]) -> dict[str, Any] | None:
+    existing_manifest = request.get("existing_manifest")
+    if not isinstance(existing_manifest, dict):
+        return None
+
+    manifest = json.loads(json.dumps(existing_manifest))
+    art_feedback = str(request.get("art_feedback") or "").strip()
+    if art_feedback:
+        visuals = dict(manifest.get("visuals") or {})
+        description = str(visuals.get("description") or "").strip()
+        feedback_line = f"Art feedback: {art_feedback}"
+        visuals["description"] = (
+            f"{description} {feedback_line}".strip() if description else feedback_line
+        )
+        manifest["visuals"] = visuals
+    return manifest
+
 async def run_pipeline(request: dict[str, Any]) -> None:
     """Execute the full Architect → (Coder ∥ Artist) → Integrator DAG."""
 
@@ -147,6 +172,8 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
     crafting_station: str | None = request.get("crafting_station")
+    content_type: str = _request_content_type(request)
+    sub_type: str = _request_sub_type(request)
 
     if not prompt:
         raise ValueError("Request payload missing 'prompt' field.")
@@ -158,7 +185,13 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     log.info("▸ Architect — generating manifest for: %s", prompt[:80])
     _set_stage("Architect — Designing item...", 15)
     architect = ArchitectAgent()
-    manifest: dict = architect.generate_manifest(prompt=prompt, tier=tier, crafting_station=crafting_station)
+    manifest: dict = architect.generate_manifest(
+        prompt=prompt,
+        tier=tier,
+        content_type=content_type,
+        sub_type=sub_type,
+        crafting_station=crafting_station,
+    )
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)
 
@@ -233,18 +266,31 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
     crafting_station: str | None = request.get("crafting_station")
+    content_type: str = _request_content_type(request)
+    sub_type: str = _request_sub_type(request)
+    preview_manifest = _prepare_preview_manifest(request)
 
-    if not prompt:
+    if preview_manifest is None and not prompt:
         raise ValueError("Request payload missing 'prompt' field.")
 
     # --- Step A: signal the TUI ----------------------------------------
     _set_stage("Kindling the Forge...", 5)
 
     # --- Step B: Architect (sequential) --------------------------------
-    log.info("▸ Architect — generating manifest for: %s", prompt[:80])
-    _set_stage("Architect — Designing item...", 15)
-    architect = ArchitectAgent()
-    manifest: dict = architect.generate_manifest(prompt=prompt, tier=tier, crafting_station=crafting_station)
+    if preview_manifest is not None:
+        manifest = preview_manifest
+        log.info("▸ Reusing existing manifest for preview regeneration: %s", manifest.get("item_name", "unknown"))
+    else:
+        log.info("▸ Architect — generating manifest for: %s", prompt[:80])
+        _set_stage("Architect — Designing item...", 15)
+        architect = ArchitectAgent()
+        manifest = architect.generate_manifest(
+            prompt=prompt,
+            tier=tier,
+            content_type=content_type,
+            sub_type=sub_type,
+            crafting_station=crafting_station,
+        )
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)
 

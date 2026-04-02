@@ -48,6 +48,28 @@ TIER_TABLE: dict[str, dict] = {
 }
 
 VALID_TIERS = set(TIER_TABLE.keys())
+VALID_CONTENT_TYPES = {"Weapon", "Accessory", "Summon", "Consumable", "Tool"}
+VALID_BUFF_IDS = {
+    "BuffID.OnFire",
+    "BuffID.Frostburn",
+    "BuffID.Slimed",
+    "BuffID.WellFed",
+    "BuffID.ManaSickness",
+    "BuffID.Poisoned",
+    "BuffID.ShadowFlame",
+    "BuffID.CursedInferno",
+}
+VALID_AMMO_IDS = {
+    "AmmoID.Arrow",
+    "AmmoID.Bullet",
+    "AmmoID.Rocket",
+    "AmmoID.Dart",
+    "AmmoID.Sand",
+    "AmmoID.Gel",
+    "AmmoID.Snowball",
+    "AmmoID.Coin",
+    "AmmoID.Flare",
+}
 
 # User-facing crafting station name → tModLoader TileID constant
 STATION_TILE_MAP: dict[str, str] = {
@@ -160,10 +182,68 @@ class ProjectileVisuals(BaseModel):
 class LLMMechanics(BaseModel):
     shoot_projectile: Optional[str] = None
     on_hit_buff: Optional[str] = None
+    buff_id: Optional[str] = None
+    ammo_id: Optional[str] = None
     custom_projectile: bool = False
     crafting_material: Optional[str] = None
     crafting_cost: Optional[int] = None
     crafting_tile: Optional[str] = None
+
+    @field_validator("on_hit_buff", "buff_id", mode="before")
+    @classmethod
+    def validate_buff_ids(cls, value):
+        if value in (None, ""):
+            return None
+        value = str(value)
+        if value not in VALID_BUFF_IDS:
+            raise ValueError(
+                f"Unknown BuffID: {value!r}. Must be one of {sorted(VALID_BUFF_IDS)}"
+            )
+        return value
+
+    @field_validator("ammo_id", mode="before")
+    @classmethod
+    def validate_ammo_ids(cls, value):
+        if value in (None, ""):
+            return None
+        value = str(value)
+        if value not in VALID_AMMO_IDS:
+            raise ValueError(
+                f"Unknown AmmoID: {value!r}. Must be one of {sorted(VALID_AMMO_IDS)}"
+            )
+        return value
+
+
+class AccessoryStats(BaseModel):
+    defense: int = 0
+    life_regen: int = 0
+    movement_speed: float = 0.0
+    rarity: str = ""
+
+
+class SummonStats(BaseModel):
+    damage: int = 0
+    knockback: float = 0.0
+    use_time: int = 0
+    minion_slots: float = 1.0
+    rarity: str = ""
+
+
+class ConsumableStats(BaseModel):
+    use_time: int = 0
+    heal_amount: int = 0
+    mana_restore: int = 0
+    stack_size: int = 1
+    rarity: str = ""
+
+
+class ToolStats(BaseModel):
+    use_time: int = 0
+    power: int = 0
+    axe_power: int = 0
+    pick_power: int = 0
+    hammer_power: int = 0
+    rarity: str = ""
 
 
 class LLMItemOutput(BaseModel):
@@ -171,11 +251,16 @@ class LLMItemOutput(BaseModel):
     item_name: str
     display_name: str
     tooltip: str = ""
+    content_type: Literal["Weapon", "Accessory", "Summon", "Consumable", "Tool"] = "Weapon"
     type: str = "Weapon"
     sub_type: str = "Sword"
     stats: LLMStats
     visuals: LLMVisuals = Field(default_factory=LLMVisuals)
     mechanics: LLMMechanics = Field(default_factory=LLMMechanics)
+    accessory_stats: Optional[AccessoryStats] = None
+    summon_stats: Optional[SummonStats] = None
+    consumable_stats: Optional[ConsumableStats] = None
+    tool_stats: Optional[ToolStats] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
     reference_needed: bool = False
     reference_subject: Optional[str] = None
@@ -238,10 +323,36 @@ class Visuals(BaseModel):
 class Mechanics(BaseModel):
     shoot_projectile: Optional[str] = None
     on_hit_buff: Optional[str] = None
+    buff_id: Optional[str] = None
+    ammo_id: Optional[str] = None
     custom_projectile: bool = False
     crafting_material: str
     crafting_cost: int
     crafting_tile: str
+
+    @field_validator("on_hit_buff", "buff_id", mode="before")
+    @classmethod
+    def validate_buff_ids(cls, value):
+        if value in (None, ""):
+            return None
+        value = str(value)
+        if value not in VALID_BUFF_IDS:
+            raise ValueError(
+                f"Unknown BuffID: {value!r}. Must be one of {sorted(VALID_BUFF_IDS)}"
+            )
+        return value
+
+    @field_validator("ammo_id", mode="before")
+    @classmethod
+    def validate_ammo_ids(cls, value):
+        if value in (None, ""):
+            return None
+        value = str(value)
+        if value not in VALID_AMMO_IDS:
+            raise ValueError(
+                f"Unknown AmmoID: {value!r}. Must be one of {sorted(VALID_AMMO_IDS)}"
+            )
+        return value
 
 
 try:
@@ -260,11 +371,16 @@ class ItemManifest(BaseModel):
     item_name: str
     display_name: str
     tooltip: str = ""
+    content_type: Literal["Weapon", "Accessory", "Summon", "Consumable", "Tool"] = "Weapon"
     type: str = "Weapon"
     sub_type: str = "Sword"
     stats: Stats
     visuals: Visuals = Field(default_factory=Visuals)
     mechanics: Mechanics
+    accessory_stats: Optional[AccessoryStats] = None
+    summon_stats: Optional[SummonStats] = None
+    consumable_stats: Optional[ConsumableStats] = None
+    tool_stats: Optional[ToolStats] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
     reference_needed: bool = False
     reference_subject: Optional[str] = None
@@ -277,6 +393,28 @@ class ItemManifest(BaseModel):
     @classmethod
     def sanitize_item_name(cls, v):
         return _to_pascal_case(str(v))
+
+    @field_validator("content_type", mode="before")
+    @classmethod
+    def normalize_content_type(cls, value):
+        if value in (None, ""):
+            return "Weapon"
+        value = str(value)
+        if value not in VALID_CONTENT_TYPES:
+            raise ValueError(
+                f"Unknown content_type: {value!r}. Must be one of {sorted(VALID_CONTENT_TYPES)}"
+            )
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def seed_legacy_defaults(cls, values):
+        if not isinstance(values, dict):
+            return values
+        if "content_type" not in values or values.get("content_type") in (None, ""):
+            legacy_type = values.get("type")
+            values["content_type"] = legacy_type if legacy_type in VALID_CONTENT_TYPES else "Weapon"
+        return values
 
     @model_validator(mode="after")
     def normalize_reference_fields(self):

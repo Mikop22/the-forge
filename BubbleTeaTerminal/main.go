@@ -24,9 +24,9 @@ import (
 type screen int
 
 const (
-	screenInput screen = iota
-	screenMode
+	screenMode screen = iota
 	screenWizard
+	screenInput
 	screenForge
 	screenStaging
 )
@@ -40,6 +40,14 @@ type bridgeStatusMsg struct{ alive bool }
 type animTickMsg time.Time
 type pollConnectorStatusMsg struct{ attempt int }
 type connectorStatusMsg struct{ status string }
+
+type previewMode int
+
+const (
+	previewModeActions previewMode = iota
+	previewModeReprompt
+	previewModeStats
+)
 
 type optionItem struct {
 	title string
@@ -61,12 +69,18 @@ type itemStats struct {
 type craftedItem struct {
 	label           string
 	tier            string
-	damageClass     string
-	styleChoice     string
-	projectile      string
+	contentType     string
+	subType         string
 	craftingStation string
 	stats           itemStats
 	spritePath      string
+}
+
+type statField struct {
+	key     string
+	label   string
+	step    float64
+	minimum float64
 }
 
 type wizardStep struct {
@@ -74,52 +88,56 @@ type wizardStep struct {
 	options  []optionItem
 }
 
-var wizardSteps = []wizardStep{
-	{
-		question: "Choose Tier",
-		options: []optionItem{
-			{title: "Starter", desc: "Early game balance and simple effects"},
-			{title: "Dungeon", desc: "Midgame utility with stronger scaling"},
-			{title: "Hardmode", desc: "High pressure combat and synergy hooks"},
-			{title: "Endgame", desc: "Peak-tier stats and complex behavior"},
-		},
+var contentTypeOptions = []optionItem{
+	{title: "Weapon", desc: "Melee, ranged, and magic armaments"},
+	{title: "Accessory", desc: "Passive mobility, defense, and buffs"},
+	{title: "Summon", desc: "Minion staves with persistent companions"},
+	{title: "Consumable", desc: "Potions, ammo, and thrown items"},
+	{title: "Tool", desc: "Hooks and fishing gear"},
+}
+
+var tierOptions = []optionItem{
+	{title: "Starter", desc: "Early game balance and simple effects"},
+	{title: "Dungeon", desc: "Midgame utility with stronger scaling"},
+	{title: "Hardmode", desc: "High pressure combat and synergy hooks"},
+	{title: "Endgame", desc: "Peak-tier stats and complex behavior"},
+}
+
+var subTypeOptions = map[string][]optionItem{
+	"Weapon": {
+		{title: "Sword", desc: "Broad melee arc with direct contact"},
+		{title: "Bow", desc: "Ranged weapon built around arrows"},
+		{title: "Staff", desc: "Magic focus with projectile casting"},
+		{title: "Gun", desc: "Fast ranged weapon with bullet fire"},
+		{title: "Cannon", desc: "Heavy launcher with loud impact"},
+		{title: "Spear", desc: "Reach-focused thrusting weapon"},
 	},
-	{
-		question: "Choose Class",
-		options: []optionItem{
-			{title: "Melee", desc: "Close-range burst and direct engagement"},
-			{title: "Ranged", desc: "Projectile pressure from safe distance"},
-			{title: "Magic", desc: "Mana-driven effects and spell identity"},
-		},
+	"Accessory": {
+		{title: "Wings", desc: "Flight time and aerial mobility"},
+		{title: "Shield", desc: "Defense, dash, and survivability"},
+		{title: "Movement", desc: "Speed and traversal boosts"},
+		{title: "StatBoost", desc: "Passive combat enhancement"},
 	},
-	{
-		question: "Choose Style",
-		options: []optionItem{
-			{title: "Swing", desc: "Wide arc attacks for crowd control"},
-			{title: "Stab", desc: "Precise thrust pattern with reach focus"},
-			{title: "Hold", desc: "Channel behavior while key is held"},
-		},
+	"Summon": {
+		{title: "MinionStaff", desc: "Summons a persistent helper minion"},
 	},
-	{
-		question: "Choose Projectile",
-		options: []optionItem{
-			{title: "None", desc: "Purely melee interaction"},
-			{title: "Standard Shot", desc: "Basic projectile companion attack"},
-			{title: "Beam Slash", desc: "Arc beam emission on swing timing"},
-			{title: "Thrown", desc: "Throwable behavior with return logic"},
-		},
+	"Consumable": {
+		{title: "HealPotion", desc: "Restores life on use"},
+		{title: "ManaPotion", desc: "Restores mana on use"},
+		{title: "BuffPotion", desc: "Applies a temporary buff"},
+		{title: "ThrownWeapon", desc: "Consumable damage item"},
+		{title: "Ammo", desc: "Stackable ammunition"},
 	},
-	{
-		question: "Choose Crafting Station",
-		options: []optionItem{
-			{title: "Auto", desc: "AI picks station based on tier and theme"},
-			{title: "By Hand", desc: "No station required"},
-			{title: "Workbench", desc: "Basic wood and early materials"},
-			{title: "Iron Anvil", desc: "Pre-hardmode metal bars"},
-			{title: "Mythril Anvil", desc: "Hardmode bars and components"},
-			{title: "Ancient Manipulator", desc: "Lunar endgame fragments"},
-		},
+	"Tool": {
+		{title: "Hook", desc: "Grapple through terrain with a tether"},
+		{title: "FishingRod", desc: "Fishing utility with power scaling"},
 	},
+}
+
+var previewStatFields = []statField{
+	{key: "damage", label: "Damage", step: 1, minimum: 1},
+	{key: "use_time", label: "Use Time", step: 1, minimum: 1},
+	{key: "knockback", label: "Knockback", step: 0.5, minimum: 0},
 }
 
 type model struct {
@@ -130,12 +148,15 @@ type model struct {
 	craftedItems []craftedItem
 
 	textInput  textinput.Model
+	previewInput textinput.Model
 	modeList   list.Model
 	wizardList list.Model
 	spinner    spinner.Model
 
 	prompt          string
 	tier            string
+	contentType     string
+	subType         string
 	damageClass     string
 	styleChoice     string
 	projectile      string
@@ -159,10 +180,15 @@ type model struct {
 	forgeSprPath   string                 // sprite PNG path from backend
 	forgeProjPath  string                 // projectile sprite PNG path from backend
 	injectMode     bool                   // true = instant inject (template pool), false = legacy compile
+	previewMode    previewMode
+	previewItem    *craftedItem
+	statEditIndex  int
 
 	bridgeAlive   bool   // forge_connector_alive.json present with live PID
 	injectErr     string // non-empty if command_trigger write failed
 	injectStatus  string // "reload_triggered", "reload_failed", "item_injected", "inject_failed", "timeout", or ""
+	pendingManifest map[string]interface{}
+	pendingArtFeedback string
 }
 
 const (
@@ -197,18 +223,29 @@ func tierToKey(tier string) string {
 	}
 }
 
-func writeUserRequest(prompt, tier, craftingStation string) error {
+func writeUserRequest(prompt, tier, contentType, subType, craftingStation string, extra map[string]interface{}) error {
 	dir := modSourcesDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"prompt": prompt,
 		"tier":   tierToKey(tier),
 		"mode":   "instant",
 	}
+	if contentType != "" {
+		payload["content_type"] = contentType
+	}
+	if subType != "" {
+		payload["sub_type"] = subType
+	}
 	if craftingStation != "" && craftingStation != "Auto" {
 		payload["crafting_station"] = craftingStation
+	}
+	for key, value := range extra {
+		if value != nil {
+			payload[key] = value
+		}
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -380,18 +417,24 @@ func readOrchestratorHeartbeat() bool {
 
 func initialModel() model {
 	ti := textinput.New()
-	ti.Placeholder = "Ex: A void blade that eats light..."
+	ti.Placeholder = "Describe your forged item..."
 	ti.Focus()
 	ti.CharLimit = 120
 	ti.Width = 54
 	ti.Prompt = ""
 
+	pi := textinput.New()
+	pi.Placeholder = "What should change?"
+	pi.CharLimit = 120
+	pi.Width = 42
+	pi.Prompt = ""
+
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(lipgloss.NewStyle().Foreground(colorRune)))
 
 	delegate := list.NewDefaultDelegate()
-	modeItems := []list.Item{
-		optionItem{title: "Auto-Forge", desc: "AI decides balance & mechanics"},
-		optionItem{title: "Manual Override", desc: "Configure tier, class, and style"},
+	modeItems := make([]list.Item, 0, len(contentTypeOptions))
+	for _, option := range contentTypeOptions {
+		modeItems = append(modeItems, option)
 	}
 	modeList := list.New(modeItems, delegate, 56, 8)
 	modeList.SetFilteringEnabled(false)
@@ -399,7 +442,7 @@ func initialModel() model {
 	modeList.SetShowStatusBar(false)
 	modeList.SetShowPagination(false)
 	modeList.DisableQuitKeybindings()
-	modeList.Title = "Complexity Check"
+	modeList.Title = "What do you want to forge?"
 
 	wizardList := list.New([]list.Item{}, delegate, 56, 8)
 	wizardList.SetFilteringEnabled(false)
@@ -410,11 +453,12 @@ func initialModel() model {
 	wizardList.SetHeight(12)
 
 	return model{
-		state:      screenInput,
-		textInput:  ti,
-		modeList:   modeList,
-		wizardList: wizardList,
-		spinner:    s,
+		state:       screenMode,
+		textInput:   ti,
+		previewInput: pi,
+		modeList:    modeList,
+		wizardList:  wizardList,
+		spinner:     s,
 	}
 }
 
@@ -464,17 +508,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
-		prompt := strings.TrimSpace(m.textInput.Value())
-		if prompt == "" {
-			m.errMsg = "Prompt cannot be empty."
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.Type {
+		case tea.KeyEsc:
+			m.state = screenWizard
 			return m, nil
+		case tea.KeyEnter:
+			prompt := strings.TrimSpace(m.textInput.Value())
+			if prompt == "" {
+				m.errMsg = "Prompt cannot be empty."
+				return m, nil
+			}
+			m.prompt = prompt
+			m.errMsg = ""
+			return m.enterForge()
 		}
-		m.prompt = prompt
-		m.errMsg = ""
-		m.state = screenMode
-		m.modeList.Select(0)
-		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -485,27 +533,15 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.Type {
-		case tea.KeyEsc:
-			m.state = screenInput
-			m.textInput.Focus()
-			return m, nil
 		case tea.KeyEnter:
 			selected, _ := m.modeList.SelectedItem().(optionItem)
-			if selected.title == "Manual Override" {
-				m.wizardIndex = 0
-				m.tier = ""
-				m.damageClass = ""
-				m.styleChoice = ""
-				m.projectile = ""
-				m.configureWizardStep()
-				m.state = screenWizard
-				return m, nil
-			}
-			m.tier = "Auto"
-			m.damageClass = ""
-			m.styleChoice = ""
-			m.projectile = ""
-			return m.enterForge()
+			m.contentType = selected.title
+			m.subType = ""
+			m.tier = ""
+			m.wizardIndex = 0
+			m.configureWizardStep()
+			m.state = screenWizard
+			return m, nil
 		}
 	}
 
@@ -525,15 +561,9 @@ func (m model) updateWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.wizardIndex--
 			switch m.wizardIndex {
 			case 0:
-				m.tier = ""
+				m.subType = ""
 			case 1:
-				m.damageClass = ""
-			case 2:
-				m.styleChoice = ""
-			case 3:
-				m.projectile = ""
-			case 4:
-				m.craftingStation = ""
+				m.tier = ""
 			}
 			m.configureWizardStep()
 			return m, nil
@@ -541,19 +571,15 @@ func (m model) updateWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selected, _ := m.wizardList.SelectedItem().(optionItem)
 			switch m.wizardIndex {
 			case 0:
-				m.tier = selected.title
+				m.subType = selected.title
 			case 1:
-				m.damageClass = selected.title
-			case 2:
-				m.styleChoice = selected.title
-			case 3:
-				m.projectile = selected.title
-			case 4:
-				m.craftingStation = selected.title
+				m.tier = selected.title
 			}
 			m.wizardIndex++
-			if m.wizardIndex >= len(wizardSteps) {
-				return m.enterForge()
+			if m.wizardIndex >= 2 {
+				m.state = screenInput
+				m.textInput.Focus()
+				return m, nil
 			}
 			m.configureWizardStep()
 			return m, nil
@@ -615,7 +641,11 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case forgeDoneMsg:
 		m.state = screenStaging
-		m.craftedItems = append(m.craftedItems, m.buildCraftedItem())
+		item := m.buildCraftedItem()
+		m.previewItem = &item
+		m.previewMode = previewModeActions
+		m.statEditIndex = 0
+		m.previewInput.SetValue("")
 		m.injecting = false
 		m.revealPhase = 1
 		checkBridgeCmd := func() tea.Msg { return bridgeStatusMsg{alive: readBridgeHeartbeat()} }
@@ -665,17 +695,85 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if key, ok := msg.(tea.KeyMsg); ok {
+		if m.previewMode == previewModeReprompt {
+			switch key.Type {
+			case tea.KeyEsc:
+				m.previewMode = previewModeActions
+				m.previewInput.SetValue("")
+				return m, nil
+			case tea.KeyEnter:
+				feedback := strings.TrimSpace(m.previewInput.Value())
+				if feedback == "" {
+					m.injectErr = "Reprompt feedback cannot be empty."
+					return m, nil
+				}
+				m.pendingManifest = m.forgeManifest
+				m.pendingArtFeedback = feedback
+				m.previewMode = previewModeActions
+				m.previewInput.SetValue("")
+				m.injectErr = ""
+				return m.enterForge()
+			}
+			var cmd tea.Cmd
+			m.previewInput, cmd = m.previewInput.Update(msg)
+			return m, cmd
+		}
+
+		if m.previewMode == previewModeStats {
+			switch key.String() {
+			case "esc", "enter":
+				m.previewMode = previewModeActions
+				return m, nil
+			case "up", "k":
+				if m.statEditIndex > 0 {
+					m.statEditIndex--
+				}
+				return m, nil
+			case "down", "j":
+				if m.statEditIndex < len(previewStatFields)-1 {
+					m.statEditIndex++
+				}
+				return m, nil
+			case "left", "h", "-":
+				m.adjustPreviewStat(-1)
+				return m, nil
+			case "right", "l", "+":
+				m.adjustPreviewStat(1)
+				return m, nil
+			}
+		}
+
 		switch key.String() {
 		case "c", "C":
 			m.resetForCraftAnother()
 			return m, nil
-		case "enter":
+		case "d", "D":
+			m.previewItem = nil
+			m.forgeManifest = nil
+			m.forgeSprPath = ""
+			m.forgeProjPath = ""
+			m.injectErr = ""
+			m.injectStatus = ""
+			m.state = screenInput
+			m.textInput.Focus()
+			return m, nil
+		case "r", "R":
+			m.previewMode = previewModeReprompt
+			m.previewInput.Focus()
+			m.injectErr = ""
+			return m, nil
+		case "s", "S":
+			m.previewMode = previewModeStats
+			m.injectErr = ""
+			return m, nil
+		case "a", "A", "enter":
 			if m.injecting {
 				return m, nil // debounce
 			}
 			m.injecting = true
 			m.injectErr = ""
 			m.injectStatus = ""
+			m.appendPreviewHistory()
 			if m.injectMode {
 				// Write forge_inject.json fresh from stored manifest data.
 				// The orchestrator's copy may have been consumed by a prior attempt.
@@ -734,32 +832,46 @@ func (m model) screenView() string {
 }
 
 func (m model) inputView() string {
+	selection := buildMetaLine(craftedItem{
+		contentType: m.contentType,
+		subType:     m.subType,
+		tier:        m.tier,
+	})
 	lines := []string{
-		styles.TitleRune.Render("The Forge :: Corruption Construct"),
-		styles.Subtitle.Render("Describe the item you want to create"),
+		styles.TitleRune.Render("The Forge"),
+		styles.Subtitle.Render("Describe your item"),
+	}
+	if selection != "" {
+		lines = append(lines, styles.Meta.Render(selection))
+	}
+	lines = append(lines,
 		"",
 		styles.PromptInput.Render(m.textInput.View()),
-	}
+	)
 	if m.errMsg != "" {
 		lines = append(lines, styles.Error.Render(m.errMsg))
 	}
-	lines = append(lines, "", styles.Hint.Render("Press Enter to continue"))
+	lines = append(lines, "", styles.Hint.Render("Enter forge  •  Esc back"))
 	return strings.Join(lines, "\n")
 }
 
 func (m model) modeView() string {
 	return strings.Join([]string{
+		styles.TitleRune.Render("What do you want to forge?"),
+		styles.Subtitle.Render("Choose a content family"),
+		"",
 		m.modeList.View(),
-		styles.Hint.Render("↑/↓ navigate  •  Enter select  •  Esc back"),
+		styles.Hint.Render("↑/↓ navigate  •  Enter select"),
 	}, "\n")
 }
 
 func (m model) wizardView() string {
-	step := fmt.Sprintf("Step %d of %d", m.wizardIndex+1, len(wizardSteps))
+	step := fmt.Sprintf("Step %d of %d", m.wizardIndex+2, 3)
 	glyph := wizardGlyphs[m.wizardIndex%len(wizardGlyphs)]
 	lines := []string{
-		styles.TitleRune.Render(glyph + "  Manual Override"),
+		styles.TitleRune.Render(glyph + "  Forge Path"),
 		styles.Progress.Render(step),
+		styles.Meta.Render(m.contentType),
 	}
 	lines = append(lines, "", m.wizardList.View(), styles.Hint.Render("↑/↓ navigate  •  Enter select  •  Esc back"))
 	return strings.Join(lines, "\n")
@@ -785,35 +897,32 @@ func (m model) forgeView() string {
 		"",
 		fmt.Sprintf("%s %s", m.spinner.View(), styles.Subtitle.Render(label)),
 		"",
-		styles.Hint.Render("Calibrating corruption sigils and item logic"),
+		styles.Hint.Render("Architecting manifest and forging sprite"),
 	}, "\n")
 }
 
 func (m model) stagingView() string {
 	headerLines := []string{
-		styles.Success.Render("✔ Item Ready"),
-		styles.Subtitle.Render("Staging Area"),
+		styles.Success.Render("✔ Preview Ready"),
+		styles.Subtitle.Render("Preview Screen"),
 		"",
 	}
 
-	if len(m.craftedItems) == 0 {
-		headerLines = append(headerLines, styles.Hint.Render("No crafted items yet."))
+	if m.previewItem == nil {
+		headerLines = append(headerLines, styles.Hint.Render("No preview available."))
 	} else {
-		// Show the latest item with sprite + stats preview.
-		latest := m.craftedItems[len(m.craftedItems)-1]
+		latest := *m.previewItem
 
-		// Item name
 		headerLines = append(headerLines, styles.Inventory.Render(m.revealItem(latest.label)))
-		if m.revealPhase >= 3 && (latest.damageClass != "" || latest.styleChoice != "" || latest.projectile != "") {
+		if m.revealPhase >= 3 {
 			meta := buildMetaLine(latest)
 			if meta != "" {
 				headerLines = append(headerLines, styles.Meta.Render(meta))
 			}
 		}
 
-		// Sprite + Stats side-by-side (only after full reveal)
 		if m.revealPhase >= 3 {
-			sprite := renderSprite(latest.spritePath)
+			sprite := renderPreviewAnimation(renderSprite(latest.spritePath), latest.contentType, latest.subType, m.animTick)
 			stats := renderStats(latest.stats)
 
 			if sprite != "" || stats != "" {
@@ -835,10 +944,9 @@ func (m model) stagingView() string {
 			}
 		}
 
-		// Previous items (compact list)
-		if len(m.craftedItems) > 1 {
-			headerLines = append(headerLines, "", styles.Hint.Render("Previous:"))
-			for i := 0; i < len(m.craftedItems)-1; i++ {
+		if len(m.craftedItems) > 0 {
+			headerLines = append(headerLines, "", styles.Hint.Render("Accepted loadout:"))
+			for i := 0; i < len(m.craftedItems); i++ {
 				item := m.craftedItems[i]
 				headerLines = append(headerLines, styles.Hint.Render(fmt.Sprintf("  %d. %s", i+1, item.label)))
 			}
@@ -881,10 +989,33 @@ func (m model) stagingView() string {
 		headerLines = append(headerLines, "", styles.Error.Render("✘ No response from Terraria"))
 		headerLines = append(headerLines, styles.Hint.Render("[C] Craft Another   [ENTER] Retry"))
 	default:
-		if m.injectMode {
-			headerLines = append(headerLines, "", styles.Hint.Render("[C] Craft Another   [ENTER] Inject"))
-		} else {
-			headerLines = append(headerLines, "", styles.Hint.Render("[C] Craft Another   [ENTER] Execute"))
+		switch m.previewMode {
+		case previewModeReprompt:
+			headerLines = append(headerLines, "", styles.Subtitle.Render("Reprompt sprite"))
+			headerLines = append(headerLines, styles.PromptInput.Render(m.previewInput.View()))
+			headerLines = append(headerLines, styles.Hint.Render("Enter regenerate  •  Esc cancel"))
+		case previewModeStats:
+			headerLines = append(headerLines, "", styles.Subtitle.Render("Tweak stats"))
+			for i, field := range previewStatFields {
+				cursor := " "
+				if i == m.statEditIndex {
+					cursor = "▸"
+				}
+				value := "—"
+				if statsMap, ok := m.forgeManifest["stats"].(map[string]interface{}); ok {
+					if current, ok := toFloat(statsMap[field.key]); ok {
+						if field.step >= 1 {
+							value = fmt.Sprintf("%.0f", current)
+						} else {
+							value = fmt.Sprintf("%.1f", current)
+						}
+					}
+				}
+				headerLines = append(headerLines, styles.Body.Render(fmt.Sprintf("%s %-10s %s", cursor, field.label, value)))
+			}
+			headerLines = append(headerLines, styles.Hint.Render("↑/↓ field  •  ←/→ adjust  •  Enter done"))
+		default:
+			headerLines = append(headerLines, "", styles.Hint.Render("[R] Reprompt sprite   [S] Tweak stats   [A] Accept & Inject   [D] Discard   [C] Reset"))
 		}
 	}
 
@@ -892,7 +1023,7 @@ func (m model) stagingView() string {
 }
 
 func (m *model) configureWizardStep() {
-	step := wizardSteps[m.wizardIndex]
+	step := m.currentWizardStep()
 	items := make([]list.Item, 0, len(step.options))
 	for _, option := range step.options {
 		items = append(items, option)
@@ -901,6 +1032,21 @@ func (m *model) configureWizardStep() {
 	m.wizardList.Select(0)
 	m.wizardList.SetHeight(max(12, len(step.options)*2+2))
 	m.wizardList.Title = step.question
+}
+
+func (m model) currentWizardStep() wizardStep {
+	switch m.wizardIndex {
+	case 0:
+		return wizardStep{
+			question: fmt.Sprintf("Choose %s Type", m.contentType),
+			options:  subTypeOptions[m.contentType],
+		}
+	default:
+		return wizardStep{
+			question: "Choose Tier",
+			options:  tierOptions,
+		}
+	}
 }
 
 func (m model) enterForge() (tea.Model, tea.Cmd) {
@@ -916,11 +1062,24 @@ func (m model) enterForge() (tea.Model, tea.Cmd) {
 
 	prompt := m.prompt
 	tier := m.tier
+	contentType := m.contentType
+	subType := m.subType
 	craftingStation := m.craftingStation
+	pendingManifest := m.pendingManifest
+	pendingArtFeedback := strings.TrimSpace(m.pendingArtFeedback)
+	m.pendingManifest = nil
+	m.pendingArtFeedback = ""
 	startCmd := func() tea.Msg {
 		// Clear any stale status from a previous run.
 		_ = os.Remove(filepath.Join(modSourcesDir(), "generation_status.json"))
-		if err := writeUserRequest(prompt, tier, craftingStation); err != nil {
+		extra := map[string]interface{}{}
+		if pendingManifest != nil {
+			extra["existing_manifest"] = pendingManifest
+		}
+		if pendingArtFeedback != "" {
+			extra["art_feedback"] = pendingArtFeedback
+		}
+		if err := writeUserRequest(prompt, tier, contentType, subType, craftingStation, extra); err != nil {
 			return forgeErrMsg{message: "Failed to write request: " + err.Error()}
 		}
 		return pollStatusMsg{}
@@ -935,9 +1094,11 @@ func animTickCmd() tea.Cmd {
 }
 
 func (m *model) resetForCraftAnother() {
-	m.state = screenInput
+	m.state = screenMode
 	m.prompt = ""
 	m.tier = ""
+	m.contentType = ""
+	m.subType = ""
 	m.damageClass = ""
 	m.styleChoice = ""
 	m.projectile = ""
@@ -955,10 +1116,16 @@ func (m *model) resetForCraftAnother() {
 	m.forgeSprPath = ""
 	m.forgeProjPath = ""
 	m.injectMode = false
+	m.previewMode = previewModeActions
+	m.previewItem = nil
+	m.statEditIndex = 0
 	m.bridgeAlive = false
 	m.injectErr = ""
 	m.injectStatus = ""
+	m.pendingManifest = nil
+	m.pendingArtFeedback = ""
 	m.textInput.SetValue("")
+	m.previewInput.SetValue("")
 	m.textInput.Focus()
 	m.modeList.Select(0)
 }
@@ -975,55 +1142,155 @@ func (m model) buildCraftedItem() craftedItem {
 		label = fmt.Sprintf("%s (%s)", name, m.tier)
 	}
 
-	// Extract stats from manifest
-	var stats itemStats
-	if m.forgeManifest != nil {
-		if statsMap, ok := m.forgeManifest["stats"].(map[string]interface{}); ok {
-			if v, ok := statsMap["damage"].(float64); ok {
-				stats.Damage = int(v)
-			}
-			if v, ok := statsMap["knockback"].(float64); ok {
-				stats.Knockback = v
-			}
-			if v, ok := statsMap["crit_chance"].(float64); ok {
-				stats.CritChance = int(v)
-			}
-			if v, ok := statsMap["use_time"].(float64); ok {
-				stats.UseTime = int(v)
-			}
-			if v, ok := statsMap["rarity"].(string); ok {
-				stats.Rarity = v
-			}
-		}
-	}
-
 	return craftedItem{
 		label:           label,
 		tier:            m.tier,
-		damageClass:     m.damageClass,
-		styleChoice:     m.styleChoice,
-		projectile:      m.projectile,
+		contentType:     m.contentType,
+		subType:         m.subType,
 		craftingStation: m.craftingStation,
-		stats:           stats,
+		stats:           extractItemStats(m.forgeManifest),
 		spritePath:      m.forgeSprPath,
 	}
 }
 
 func buildMetaLine(item craftedItem) string {
 	parts := []string{}
-	if item.damageClass != "" {
-		parts = append(parts, item.damageClass)
+	if item.contentType != "" {
+		parts = append(parts, item.contentType)
 	}
-	if item.styleChoice != "" {
-		parts = append(parts, item.styleChoice)
+	if item.subType != "" {
+		parts = append(parts, item.subType)
 	}
-	if item.projectile != "" && item.projectile != "None" {
-		parts = append(parts, item.projectile)
+	if item.tier != "" {
+		parts = append(parts, item.tier)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return strings.Join(parts, " · ")
+}
+
+func extractItemStats(manifest map[string]interface{}) itemStats {
+	var stats itemStats
+	if manifest == nil {
+		return stats
+	}
+	statsMap, ok := manifest["stats"].(map[string]interface{})
+	if !ok {
+		return stats
+	}
+	if v, ok := toFloat(statsMap["damage"]); ok {
+		stats.Damage = int(v)
+	}
+	if v, ok := toFloat(statsMap["knockback"]); ok {
+		stats.Knockback = v
+	}
+	if v, ok := toFloat(statsMap["crit_chance"]); ok {
+		stats.CritChance = int(v)
+	}
+	if v, ok := toFloat(statsMap["use_time"]); ok {
+		stats.UseTime = int(v)
+	}
+	if v, ok := statsMap["rarity"].(string); ok {
+		stats.Rarity = v
+	}
+	return stats
+}
+
+func toFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		fv, err := v.Float64()
+		return fv, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func (m *model) adjustPreviewStat(direction int) {
+	if m.forgeManifest == nil || len(previewStatFields) == 0 {
+		return
+	}
+	statsMap, ok := m.forgeManifest["stats"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	field := previewStatFields[m.statEditIndex]
+	current, _ := toFloat(statsMap[field.key])
+	next := current + field.step*float64(direction)
+	if next < field.minimum {
+		next = field.minimum
+	}
+	if field.step >= 1 {
+		next = math.Round(next)
+	} else {
+		next = math.Round(next*2) / 2
+	}
+	statsMap[field.key] = next
+	m.forgeManifest["stats"] = statsMap
+	if m.previewItem != nil {
+		m.previewItem.stats = extractItemStats(m.forgeManifest)
+	}
+}
+
+func (m *model) appendPreviewHistory() {
+	if m.previewItem == nil {
+		return
+	}
+	if len(m.craftedItems) > 0 {
+		last := m.craftedItems[len(m.craftedItems)-1]
+		if last.label == m.previewItem.label &&
+			last.tier == m.previewItem.tier &&
+			last.contentType == m.previewItem.contentType &&
+			last.subType == m.previewItem.subType {
+			return
+		}
+	}
+	m.craftedItems = append(m.craftedItems, *m.previewItem)
+}
+
+func renderPreviewAnimation(sprite, contentType, subType string, tick int) string {
+	if sprite == "" {
+		return ""
+	}
+	switch {
+	case contentType == "Summon":
+		bob := []int{0, 1, 0, 1}[tick%4]
+		return fmt.Sprintf("☺\n%s%s", strings.Repeat(" ", bob), sprite)
+	case contentType == "Accessory":
+		return sprite + "\n+" + " passive aura"
+	case contentType == "Consumable":
+		if tick%4 == 0 {
+			return sprite + "\n gulp"
+		}
+		return sprite
+	case subType == "Gun" || subType == "Bow" || subType == "Staff" || subType == "Cannon":
+		return fmt.Sprintf("@ %s %s•", sprite, strings.Repeat(" ", tick%4))
+	case subType == "Spear":
+		return shiftPreviewSprite(sprite, tick%4)
+	default:
+		swingMarks := []string{"\\", "|", "/", "-"}
+		return fmt.Sprintf("%s %s", swingMarks[tick%len(swingMarks)], shiftPreviewSprite(sprite, tick%3))
+	}
+}
+
+func shiftPreviewSprite(sprite string, offset int) string {
+	if offset <= 0 {
+		return sprite
+	}
+	lines := strings.Split(sprite, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Repeat(" ", offset) + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -1239,8 +1506,14 @@ func (m model) emberStrip() string {
 }
 
 func (m model) sigilColumn() string {
-	slots := []string{"Tier", "Class", "Style", "Proj", "Forge"}
-	values := []string{m.tier, m.damageClass, m.styleChoice, m.projectile, m.craftingStation}
+	slots := []string{"Type", "Sub", "Tier", "Prompt", "Forge"}
+	values := []string{
+		m.contentType,
+		m.subType,
+		m.tier,
+		truncateLabel(strings.TrimSpace(m.prompt), 10),
+		m.craftingStation,
+	}
 	lines := []string{styles.Meta.Render("Sigils")}
 	for i := range slots {
 		mark := "○"
@@ -1252,6 +1525,16 @@ func (m model) sigilColumn() string {
 		lines = append(lines, styles.Body.Render(fmt.Sprintf("%s %s", mark, label)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func truncateLabel(value string, maxLen int) string {
+	if maxLen <= 0 || len(value) <= maxLen {
+		return value
+	}
+	if maxLen <= 3 {
+		return value[:maxLen]
+	}
+	return value[:maxLen-3] + "..."
 }
 
 func (m model) heatBar() string {

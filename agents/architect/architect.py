@@ -14,7 +14,7 @@ try:  # Prefer package imports to avoid cross-agent module name collisions.
         LLMItemOutput,
         resolve_crafting,
     )
-    from architect.prompts import build_prompt
+    from architect import prompts as prompt_router
     from architect.reference_finder import BrowserReferenceFinder
     from architect.reference_policy import HybridReferenceApprover, ReferencePolicy
 except ImportError:  # Fallback for direct script execution from the folder.
@@ -25,7 +25,7 @@ except ImportError:  # Fallback for direct script execution from the folder.
         LLMItemOutput,
         resolve_crafting,
     )
-    from prompts import build_prompt
+    import prompts as prompt_router
     from reference_finder import BrowserReferenceFinder
     from reference_policy import HybridReferenceApprover, ReferencePolicy
 
@@ -45,16 +45,26 @@ class ArchitectAgent:
 
     def __init__(self, model_name: str = "gpt-5.4") -> None:
         self._llm = ChatOpenAI(model=model_name, timeout=120)
-        self._prompt = build_prompt()
-        # LCEL chain: prompt -> LLM with structured Pydantic output
-        self._chain = self._prompt | self._llm.with_structured_output(LLMItemOutput)
+        self._structured_llm = self._llm.with_structured_output(LLMItemOutput)
         self._reference_policy = ReferencePolicy(
             finder=BrowserReferenceFinder(),
             approver=HybridReferenceApprover(model_name=model_name),
             max_retries=1,
         )
 
-    def generate_manifest(self, prompt: str, tier: str, crafting_station: str | None = None) -> dict:
+    def _build_chain(self, content_type: str, sub_type: str):
+        prompt_template = prompt_router.build_prompt(content_type, sub_type)
+        # LCEL chain: prompt -> LLM with structured Pydantic output
+        return prompt_template | self._structured_llm
+
+    def generate_manifest(
+        self,
+        prompt: str,
+        tier: str,
+        content_type: str = "Weapon",
+        sub_type: str = "Sword",
+        crafting_station: str | None = None,
+    ) -> dict:
         """Generate a fully validated item manifest.
 
         Parameters
@@ -75,6 +85,8 @@ class ArchitectAgent:
         ValueError
             If *tier* is not a recognised tier key.
         """
+        content_type = content_type or "Weapon"
+        content_type = prompt_router.normalize_content_type(content_type)
         if tier not in VALID_TIERS:
             raise ValueError(
                 f"Unknown tier: {tier!r}. Must be one of {sorted(VALID_TIERS)}"
@@ -86,9 +98,11 @@ class ArchitectAgent:
         crafting = resolve_crafting(prompt, tier, crafting_station)
 
         # 2. Invoke the LLM chain
-        llm_result: LLMItemOutput = self._chain.invoke({
+        llm_result: LLMItemOutput = self._build_chain(content_type, sub_type).invoke({
             "user_prompt": prompt,
             "selected_tier": tier,
+            "content_type": content_type,
+            "sub_type": sub_type,
             "damage_min": tier_data["damage"][0],
             "damage_max": tier_data["damage"][1],
             "use_time_min": tier_data["use_time"][0],
@@ -99,6 +113,9 @@ class ArchitectAgent:
         #    LLM overrides take priority when the user was explicit;
         #    deterministic values fill in anything the LLM left null.
         data = llm_result.model_dump()
+        data["content_type"] = content_type
+        data["sub_type"] = str(data.get("sub_type") or sub_type)
+        data.setdefault("type", "Weapon")
         llm_crafting = data.get("mechanics", {})
         for key in ("crafting_material", "crafting_cost", "crafting_tile"):
             if not llm_crafting.get(key):
@@ -107,8 +124,8 @@ class ArchitectAgent:
             prompt=prompt,
             reference_needed=bool(data.get("reference_needed", False)),
             reference_subject=data.get("reference_subject"),
-            item_type=data.get("type", ""),
-            sub_type=data.get("sub_type", ""),
+            item_type=data.get("content_type", data.get("type", "")),
+            sub_type=data.get("sub_type", sub_type),
         )
         data.update(reference_data)
         self._enforce_reference_fidelity_prompting(data)

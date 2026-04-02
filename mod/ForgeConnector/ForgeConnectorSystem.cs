@@ -11,6 +11,7 @@ using Terraria;
 using Terraria.GameContent;
 using Terraria.ID;
 using Terraria.ModLoader;
+using ForgeConnector.Content.Buffs;
 using ForgeConnector.Content.Items;
 using ForgeConnector.Content.Projectiles;
 
@@ -35,8 +36,6 @@ namespace ForgeConnector
         private string _injectPath = string.Empty;
         private string _heartbeatPath = string.Empty;
         private string _statusPath = string.Empty;
-
-        // (Type ID mappings stored in ForgeManifestStore)
 
         // ------------------------------------------------------------------
         // Lifecycle
@@ -65,57 +64,64 @@ namespace ForgeConnector
         }
 
         /// <summary>
-        /// Registers the tModLoader type IDs for all template items/projectiles
+        /// Registers the tModLoader type IDs for all template items/projectiles/buffs
         /// so we can spawn them by slot index at runtime.
         /// </summary>
         private void RegisterTemplateTypeIds()
         {
-            // Items: ForgeItem_001 through ForgeItem_050
-            var itemTypes = new Type[]
-            {
-                typeof(ForgeItem_001), typeof(ForgeItem_002), typeof(ForgeItem_003), typeof(ForgeItem_004), typeof(ForgeItem_005),
-                typeof(ForgeItem_006), typeof(ForgeItem_007), typeof(ForgeItem_008), typeof(ForgeItem_009), typeof(ForgeItem_010),
-                typeof(ForgeItem_011), typeof(ForgeItem_012), typeof(ForgeItem_013), typeof(ForgeItem_014), typeof(ForgeItem_015),
-                typeof(ForgeItem_016), typeof(ForgeItem_017), typeof(ForgeItem_018), typeof(ForgeItem_019), typeof(ForgeItem_020),
-                typeof(ForgeItem_021), typeof(ForgeItem_022), typeof(ForgeItem_023), typeof(ForgeItem_024), typeof(ForgeItem_025),
-                typeof(ForgeItem_026), typeof(ForgeItem_027), typeof(ForgeItem_028), typeof(ForgeItem_029), typeof(ForgeItem_030),
-                typeof(ForgeItem_031), typeof(ForgeItem_032), typeof(ForgeItem_033), typeof(ForgeItem_034), typeof(ForgeItem_035),
-                typeof(ForgeItem_036), typeof(ForgeItem_037), typeof(ForgeItem_038), typeof(ForgeItem_039), typeof(ForgeItem_040),
-                typeof(ForgeItem_041), typeof(ForgeItem_042), typeof(ForgeItem_043), typeof(ForgeItem_044), typeof(ForgeItem_045),
-                typeof(ForgeItem_046), typeof(ForgeItem_047), typeof(ForgeItem_048), typeof(ForgeItem_049), typeof(ForgeItem_050),
-            };
-
-            // Hoist reflection lookup outside loop
-            var itemTypeMethod = typeof(ModContent).GetMethod("ItemType", Type.EmptyTypes);
-            for (int i = 0; i < itemTypes.Length; i++)
-            {
-                var generic = itemTypeMethod?.MakeGenericMethod(itemTypes[i]);
-                if (generic != null)
+            RegisterTypeIds(
+                new Type[]
                 {
-                    int typeId = (int)generic.Invoke(null, null)!;
-                    ForgeManifestStore.RegisterItemTypeId(i, typeId);
-                }
-            }
+                    typeof(ForgeItem_001), typeof(ForgeItem_002), typeof(ForgeItem_003), typeof(ForgeItem_004), typeof(ForgeItem_005),
+                    typeof(ForgeItem_006), typeof(ForgeItem_007), typeof(ForgeItem_008), typeof(ForgeItem_009), typeof(ForgeItem_010),
+                    typeof(ForgeItem_011), typeof(ForgeItem_012), typeof(ForgeItem_013), typeof(ForgeItem_014), typeof(ForgeItem_015),
+                    typeof(ForgeItem_016), typeof(ForgeItem_017), typeof(ForgeItem_018), typeof(ForgeItem_019), typeof(ForgeItem_020),
+                    typeof(ForgeItem_021), typeof(ForgeItem_022), typeof(ForgeItem_023), typeof(ForgeItem_024), typeof(ForgeItem_025),
+                    typeof(ForgeItem_026), typeof(ForgeItem_027), typeof(ForgeItem_028), typeof(ForgeItem_029), typeof(ForgeItem_030),
+                    typeof(ForgeItem_031), typeof(ForgeItem_032), typeof(ForgeItem_033), typeof(ForgeItem_034), typeof(ForgeItem_035),
+                    typeof(ForgeItem_036), typeof(ForgeItem_037), typeof(ForgeItem_038), typeof(ForgeItem_039), typeof(ForgeItem_040),
+                    typeof(ForgeItem_041), typeof(ForgeItem_042), typeof(ForgeItem_043), typeof(ForgeItem_044), typeof(ForgeItem_045),
+                    typeof(ForgeItem_046), typeof(ForgeItem_047), typeof(ForgeItem_048), typeof(ForgeItem_049), typeof(ForgeItem_050),
+                },
+                "ItemType",
+                ForgeManifestStore.RegisterItemTypeId);
 
-            // Projectiles: ForgeProjectile_001 through ForgeProjectile_025
-            var projTypes = new Type[]
-            {
-                typeof(ForgeProjectile_001), typeof(ForgeProjectile_002), typeof(ForgeProjectile_003), typeof(ForgeProjectile_004), typeof(ForgeProjectile_005),
-                typeof(ForgeProjectile_006), typeof(ForgeProjectile_007), typeof(ForgeProjectile_008), typeof(ForgeProjectile_009), typeof(ForgeProjectile_010),
-                typeof(ForgeProjectile_011), typeof(ForgeProjectile_012), typeof(ForgeProjectile_013), typeof(ForgeProjectile_014), typeof(ForgeProjectile_015),
-                typeof(ForgeProjectile_016), typeof(ForgeProjectile_017), typeof(ForgeProjectile_018), typeof(ForgeProjectile_019), typeof(ForgeProjectile_020),
-                typeof(ForgeProjectile_021), typeof(ForgeProjectile_022), typeof(ForgeProjectile_023), typeof(ForgeProjectile_024), typeof(ForgeProjectile_025),
-            };
-
-            var projTypeMethod = typeof(ModContent).GetMethod("ProjectileType", Type.EmptyTypes);
-            for (int i = 0; i < projTypes.Length; i++)
-            {
-                var generic = projTypeMethod?.MakeGenericMethod(projTypes[i]);
-                if (generic != null)
+            RegisterTypeIds(
+                new Type[]
                 {
-                    int typeId = (int)generic.Invoke(null, null)!;
-                    ForgeManifestStore.RegisterProjectileTypeId(i, typeId);
-                }
+                    typeof(ForgeProjectile_001), typeof(ForgeProjectile_002), typeof(ForgeProjectile_003), typeof(ForgeProjectile_004), typeof(ForgeProjectile_005),
+                    typeof(ForgeProjectile_006), typeof(ForgeProjectile_007), typeof(ForgeProjectile_008), typeof(ForgeProjectile_009), typeof(ForgeProjectile_010),
+                    typeof(ForgeProjectile_011), typeof(ForgeProjectile_012), typeof(ForgeProjectile_013), typeof(ForgeProjectile_014), typeof(ForgeProjectile_015),
+                    typeof(ForgeProjectile_016), typeof(ForgeProjectile_017), typeof(ForgeProjectile_018), typeof(ForgeProjectile_019), typeof(ForgeProjectile_020),
+                    typeof(ForgeProjectile_021), typeof(ForgeProjectile_022), typeof(ForgeProjectile_023), typeof(ForgeProjectile_024), typeof(ForgeProjectile_025),
+                },
+                "ProjectileType",
+                ForgeManifestStore.RegisterProjectileTypeId);
+
+            RegisterTypeIds(
+                new Type[]
+                {
+                    typeof(ForgeBuff_001), typeof(ForgeBuff_002), typeof(ForgeBuff_003), typeof(ForgeBuff_004), typeof(ForgeBuff_005),
+                    typeof(ForgeBuff_006), typeof(ForgeBuff_007), typeof(ForgeBuff_008), typeof(ForgeBuff_009), typeof(ForgeBuff_010),
+                    typeof(ForgeBuff_011), typeof(ForgeBuff_012), typeof(ForgeBuff_013), typeof(ForgeBuff_014), typeof(ForgeBuff_015),
+                    typeof(ForgeBuff_016), typeof(ForgeBuff_017), typeof(ForgeBuff_018), typeof(ForgeBuff_019), typeof(ForgeBuff_020),
+                    typeof(ForgeBuff_021), typeof(ForgeBuff_022), typeof(ForgeBuff_023), typeof(ForgeBuff_024), typeof(ForgeBuff_025),
+                },
+                "BuffType",
+                ForgeManifestStore.RegisterBuffTypeId);
+        }
+
+        private static void RegisterTypeIds(Type[] types, string methodName, Action<int, int> register)
+        {
+            var method = typeof(ModContent).GetMethod(methodName, Type.EmptyTypes);
+            if (method == null)
+                return;
+
+            for (int i = 0; i < types.Length; i++)
+            {
+                var generic = method.MakeGenericMethod(types[i]);
+                int typeId = (int)generic.Invoke(null, null)!;
+                register(i, typeId);
             }
         }
 
@@ -177,58 +183,84 @@ namespace ForgeConnector
                 string itemName = root.TryGetProperty("item_name", out var nameEl) ? nameEl.GetString() ?? "" : "";
                 Mod.Logger.Info("[ForgeConnector] Injecting item: " + itemName);
 
-                // Parse manifest into ForgeItemData
                 var data = ParseManifest(root);
+                int itemSlot = ForgeManifestStore.NextItemSlot();
+                ForgeManifestStore.RegisterItem(itemSlot, data);
 
-                // Allocate a template slot
-                int slot = ForgeManifestStore.NextItemSlot();
-                ForgeManifestStore.RegisterItem(slot, data);
-
-                // Load sprite texture
-                if (root.TryGetProperty("sprite_path", out var spriteEl))
+                string itemSpritePath = GetSpritePath(root, "sprite_path");
+                if (!string.IsNullOrEmpty(itemSpritePath) && File.Exists(itemSpritePath))
                 {
-                    string spritePath = spriteEl.GetString() ?? "";
-                    if (File.Exists(spritePath))
+                    LoadItemTexture(itemSlot, itemSpritePath);
+                }
+
+                string projSpritePath = GetSpritePath(root, "projectile_sprite_path");
+                bool needsProjectile = NeedsProjectile(data, projSpritePath);
+
+                int projSlot = -1;
+                if (needsProjectile && data.ShootProjectileTypeId < 0)
+                {
+                    projSlot = ForgeManifestStore.NextProjectileSlot();
+                    data.ShootProjectileSlot = projSlot;
+                }
+
+                int buffSlot = -1;
+                if (string.Equals(data.ContentType, "Summon", StringComparison.OrdinalIgnoreCase))
+                {
+                    buffSlot = ForgeManifestStore.NextBuffSlot();
+                    data.BuffTemplateSlot = buffSlot;
+                }
+
+                if (projSlot >= 0)
+                {
+                    var projData = ParseProjectile(root);
+                    projData.MinionBuffSlot = buffSlot;
+                    projData.MinionProjectileSlot = projSlot;
+
+                    if (string.Equals(data.ContentType, "Summon", StringComparison.OrdinalIgnoreCase))
                     {
-                        LoadItemTexture(slot, spritePath);
+                        projData.AiMode = "minion_follower";
+                        projData.MinionSlots = data.MinionSlots;
+                        projData.MinionHoverHeight = data.MinionHoverHeight;
+                        projData.MinionSpeed = data.MinionSpeed;
+                        projData.MinionAcceleration = data.MinionAcceleration;
+                        projData.MinionTeleportDistance = data.MinionTeleportDistance;
+                        projData.MinionAttackRange = data.MinionAttackRange;
+                    }
+                    else if (string.Equals(data.SubType, "Hook", StringComparison.OrdinalIgnoreCase))
+                    {
+                        projData.AiMode = "hook";
+                    }
+
+                    ForgeManifestStore.RegisterProjectile(projSlot, projData);
+
+                    if (!string.IsNullOrEmpty(projSpritePath) && File.Exists(projSpritePath))
+                    {
+                        LoadProjectileTexture(projSlot, projSpritePath);
                     }
                 }
 
-                // Handle projectile if specified
-                bool hasProjectile = data.ShootProjectileSlot >= 0;
-                string projSpritePath = "";
-                if (root.TryGetProperty("projectile_sprite_path", out var projSpriteEl)
-                    && projSpriteEl.ValueKind == JsonValueKind.String)
+                if (buffSlot >= 0)
                 {
-                    projSpritePath = projSpriteEl.GetString() ?? "";
-                    if (projSpritePath == "None" || projSpritePath == "null")
-                        projSpritePath = "";
-                    if (!string.IsNullOrEmpty(projSpritePath) && File.Exists(projSpritePath))
-                        hasProjectile = true;
+                    int minionTypeId = projSlot >= 0
+                        ? ForgeManifestStore.GetProjectileTypeId(projSlot)
+                        : data.ShootProjectileTypeId;
+                    var buffData = ParseBuff(root, minionTypeId);
+                    buffData.MinionProjectileSlot = projSlot;
+                    buffData.MinionProjectileTypeId = minionTypeId;
+                    ForgeManifestStore.RegisterBuff(buffSlot, buffData);
                 }
 
-                if (hasProjectile)
-                {
-                    int projSlot = ForgeManifestStore.NextProjectileSlot();
-                    var projData = ParseProjectile(root);
-                    ForgeManifestStore.RegisterProjectile(projSlot, projData);
-                    data.ShootProjectileSlot = projSlot;
-                    ForgeManifestStore.RegisterItem(slot, data);
+                ForgeManifestStore.RegisterItem(itemSlot, data);
 
-                    if (!string.IsNullOrEmpty(projSpritePath) && File.Exists(projSpritePath))
-                        LoadProjectileTexture(projSlot, projSpritePath);
-                }
-
-                // Spawn the item into the player's inventory
-                int itemTypeId = ForgeManifestStore.GetItemTypeId(slot);
-                Mod.Logger.Info($"[ForgeConnector] Slot={slot}, TypeId={itemTypeId}, LocalPlayer null={Main.LocalPlayer == null}");
+                int itemTypeId = ForgeManifestStore.GetItemTypeId(itemSlot);
+                Mod.Logger.Info($"[ForgeConnector] Slot={itemSlot}, TypeId={itemTypeId}, LocalPlayer null={Main.LocalPlayer == null}");
                 if (itemTypeId > 0 && Main.LocalPlayer != null)
                 {
                     Main.LocalPlayer.QuickSpawnItem(Main.LocalPlayer.GetSource_Misc("ForgeConnector"), itemTypeId);
                     Mod.Logger.Info("[ForgeConnector] Item spawned successfully");
                 }
 
-                WriteStatus("item_injected", itemName, slot);
+                WriteStatus("item_injected", itemName, itemSlot);
                 Mod.Logger.Info("[ForgeConnector] Status written: item_injected");
             }
             catch (Exception ex)
@@ -241,71 +273,82 @@ namespace ForgeConnector
         private ForgeItemData ParseManifest(JsonElement root)
         {
             var data = new ForgeItemData();
+            var manifest = GetManifest(root);
 
-            if (root.TryGetProperty("manifest", out var manifest))
+            data.Name = GetStr(manifest, "item_name", data.Name);
+            data.DisplayName = GetStr(manifest, "display_name", data.Name);
+            data.Tooltip = GetStr(manifest, "tooltip", data.Tooltip);
+            data.ContentType = NormalizeContentType(GetStr(manifest, "type", data.ContentType));
+            data.SubType = GetStr(manifest, "sub_type", data.SubType);
+
+            if (manifest.TryGetProperty("stats", out var stats))
             {
-                data.Name = GetStr(manifest, "item_name");
-                data.DisplayName = GetStr(manifest, "display_name", data.Name);
-                data.Tooltip = GetStr(manifest, "tooltip");
-                data.SubType = GetStr(manifest, "sub_type", "Sword");
-
-                if (manifest.TryGetProperty("stats", out var stats))
-                {
-                    data.Damage = GetInt(stats, "damage", 10);
-                    data.Knockback = GetFloat(stats, "knockback", 4f);
-                    data.CritChance = GetInt(stats, "crit_chance", 4);
-                    data.UseTime = GetInt(stats, "use_time", 20);
-                    data.UseAnimation = GetInt(stats, "use_animation", data.UseTime);
-                    data.AutoReuse = GetBool(stats, "auto_reuse", true);
-                    data.Rarity = ParseRarity(GetStr(stats, "rarity", "ItemRarityID.White"));
-                }
-
-                if (manifest.TryGetProperty("visuals", out var visuals))
-                {
-                    if (visuals.TryGetProperty("icon_size", out var iconSize)
-                        && iconSize.ValueKind == JsonValueKind.Array
-                        && iconSize.GetArrayLength() >= 2)
-                    {
-                        data.Width = iconSize[0].GetInt32();
-                        data.Height = iconSize[1].GetInt32();
-                    }
-                }
-
-                if (manifest.TryGetProperty("mechanics", out var mechanics))
-                {
-                    data.ShootProjectileSlot = mechanics.TryGetProperty("custom_projectile", out var cp) && cp.GetBoolean() ? 0 : -1;
-                }
-
-                // Map sub_type to damage class and use style.
-                // Must stay in sync with the valid sub_types listed in agents/architect/prompts.py.
-                data.DamageClassName = data.SubType switch
-                {
-                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
-                        or "Shotgun" or "Launcher" or "Cannon" => "Ranged",
-                    "Staff" or "Wand" or "Tome" or "Spellbook" => "Magic",
-                    _ => "Melee",
-                };
-                data.UseStyleName = data.SubType switch
-                {
-                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
-                        or "Shotgun" or "Launcher" or "Cannon"
-                        or "Staff" or "Wand" or "Tome" or "Spellbook" => "Shoot",
-                    "Spear" or "Lance" => "Thrust",
-                    _ => "Swing",
-                };
-                data.NoMelee = data.UseStyleName == "Shoot";
-                // Shoot-style weapons always need shoot speed; melee weapons with
-                // projectiles (e.g. Terra Blade) also need nonzero shoot speed.
-                data.ShootSpeed = (data.UseStyleName == "Shoot" || data.ShootProjectileSlot >= 0) ? 10f : 0f;
-
-                // Derive tool power from sub_type, scaled by damage as a tier proxy
-                if (data.SubType is "Pickaxe" or "Hamaxe")
-                    data.PickPower = Math.Clamp(data.Damage * 3, 35, 225);
-                if (data.SubType is "Axe" or "Hamaxe")
-                    data.AxePower = Math.Clamp(data.Damage / 2, 7, 35);
-                if (data.SubType is "Hammer" or "Hamaxe")
-                    data.HammerPower = Math.Clamp(data.Damage + 20, 25, 100);
+                data.Damage = GetInt(stats, "damage", data.Damage);
+                data.Knockback = GetFloat(stats, "knockback", data.Knockback);
+                data.CritChance = GetInt(stats, "crit_chance", data.CritChance);
+                data.UseTime = GetInt(stats, "use_time", data.UseTime);
+                data.UseAnimation = GetInt(stats, "use_animation", data.UseTime);
+                data.AutoReuse = GetBool(stats, "auto_reuse", data.AutoReuse);
+                data.Rarity = ParseRarity(GetStr(stats, "rarity", "ItemRarityID.White"));
+                data.Value = GetInt(stats, "value", data.Value);
+                data.Defense = GetInt(stats, "defense", data.Defense);
+                data.HealLife = GetInt(stats, "heal_life", data.HealLife);
+                data.HealMana = GetInt(stats, "heal_mana", data.HealMana);
+                data.MaxStack = Math.Max(1, GetInt(stats, "max_stack", data.MaxStack));
             }
+
+            if (manifest.TryGetProperty("visuals", out var visuals))
+            {
+                if (visuals.TryGetProperty("icon_size", out var iconSize)
+                    && iconSize.ValueKind == JsonValueKind.Array
+                    && iconSize.GetArrayLength() >= 2)
+                {
+                    data.Width = iconSize[0].GetInt32();
+                    data.Height = iconSize[1].GetInt32();
+                }
+            }
+
+            if (manifest.TryGetProperty("mechanics", out var mechanics))
+            {
+                data.ShootProjectileName = GetStr(mechanics, "shoot_projectile", "");
+                data.ShootProjectileTypeId = ResolveProjectileId(data.ShootProjectileName);
+                data.CustomProjectile = GetBool(mechanics, "custom_projectile", false) ||
+                    IsCustomProjectileName(data.ShootProjectileName);
+
+                if (data.ShootProjectileTypeId >= 0)
+                {
+                    data.CustomProjectile = false;
+                }
+
+                data.BuffType = ResolveBuffId(GetStr(mechanics, "on_hit_buff", ""));
+                data.BuffTime = GetInt(mechanics, "buff_time", data.BuffTime);
+                data.UseAmmoTypeId = ResolveAmmoId(GetStr(mechanics, "use_ammo", ""));
+
+                data.PickPower = GetInt(mechanics, "pick_power", data.PickPower);
+                data.AxePower = GetInt(mechanics, "axe_power", data.AxePower);
+                data.HammerPower = GetInt(mechanics, "hammer_power", data.HammerPower);
+                data.FishingPower = GetInt(mechanics, "fishing_power", data.FishingPower);
+                data.HookProjectileSlot = GetInt(mechanics, "hook_projectile_slot", data.HookProjectileSlot);
+
+                data.MinionSlots = GetFloat(mechanics, "minion_slots", data.MinionSlots);
+                data.MinionHoverHeight = GetFloat(mechanics, "minion_hover_height", data.MinionHoverHeight);
+                data.MinionSpeed = GetFloat(mechanics, "minion_speed", data.MinionSpeed);
+                data.MinionAcceleration = GetFloat(mechanics, "minion_acceleration", data.MinionAcceleration);
+                data.MinionTeleportDistance = GetFloat(mechanics, "minion_teleport_distance", data.MinionTeleportDistance);
+                data.MinionAttackRange = GetFloat(mechanics, "minion_attack_range", data.MinionAttackRange);
+                data.MinionBuffTime = GetInt(mechanics, "minion_buff_time", data.MinionBuffTime);
+                data.MinionAiMode = GetStr(mechanics, "minion_ai_mode", data.MinionAiMode);
+                data.BuffTemplateSlot = GetInt(mechanics, "buff_template_slot", data.BuffTemplateSlot);
+            }
+
+            ApplyContentTypeDefaults(data);
+            ApplySubTypeDefaults(data);
+
+            if (data.ShootProjectileTypeId < 0 && data.CustomProjectile)
+                data.ShootProjectileSlot = -1;
+
+            if (data.ContentType == "Summon" && data.ShootSpeed <= 0f)
+                data.ShootSpeed = 10f;
 
             if (root.TryGetProperty("item_name", out var rootName))
                 data.Name = rootName.GetString() ?? data.Name;
@@ -316,23 +359,285 @@ namespace ForgeConnector
         private ForgeProjectileData ParseProjectile(JsonElement root)
         {
             var data = new ForgeProjectileData();
+            var manifest = GetManifest(root);
 
-            if (root.TryGetProperty("manifest", out var manifest))
+            data.Name = GetStr(manifest, "item_name", data.Name);
+            data.ContentType = NormalizeContentType(GetStr(manifest, "type", data.ContentType));
+            data.SubType = GetStr(manifest, "sub_type", data.SubType);
+
+            if (manifest.TryGetProperty("projectile_visuals", out var pv)
+                && pv.ValueKind == JsonValueKind.Object)
             {
-                if (manifest.TryGetProperty("projectile_visuals", out var pv)
-                    && pv.ValueKind == JsonValueKind.Object)
+                if (pv.TryGetProperty("icon_size", out var iconSize)
+                    && iconSize.ValueKind == JsonValueKind.Array
+                    && iconSize.GetArrayLength() >= 2)
                 {
-                    if (pv.TryGetProperty("icon_size", out var iconSize)
-                        && iconSize.ValueKind == JsonValueKind.Array
-                        && iconSize.GetArrayLength() >= 2)
-                    {
-                        data.Width = iconSize[0].GetInt32();
-                        data.Height = iconSize[1].GetInt32();
-                    }
+                    data.Width = iconSize[0].GetInt32();
+                    data.Height = iconSize[1].GetInt32();
                 }
             }
 
+            JsonElement projectileSection = manifest;
+            if (!TryGetObject(manifest, "projectile", out projectileSection))
+            {
+                TryGetObject(manifest, "mechanics", out projectileSection);
+            }
+
+            string defaultAiMode = data.ContentType == "Summon"
+                ? "minion_follower"
+                : string.Equals(data.SubType, "Hook", StringComparison.OrdinalIgnoreCase)
+                    ? "hook"
+                    : "straight";
+
+            data.AiMode = GetStr(projectileSection, "ai_mode", defaultAiMode);
+            data.AiStyle = GetFloat(projectileSection, "ai_style", data.AiMode == "hook" ? 7f : 0f);
+            data.Friendly = GetBool(projectileSection, "friendly", data.AiMode != "hook");
+            data.Hostile = GetBool(projectileSection, "hostile", false);
+            data.Penetrate = GetInt(projectileSection, "penetrate", data.AiMode == "minion_follower" ? -1 : data.Penetrate);
+            data.TimeLeft = GetInt(projectileSection, "time_left", data.AiMode == "minion_follower" ? 18000 : data.TimeLeft);
+            data.Light = GetFloat(projectileSection, "light", data.Light);
+            data.MinionSlots = GetFloat(projectileSection, "minion_slots", data.MinionSlots);
+            data.MinionHoverHeight = GetFloat(projectileSection, "minion_hover_height", data.MinionHoverHeight);
+            data.MinionSpeed = GetFloat(projectileSection, "minion_speed", data.MinionSpeed);
+            data.MinionAcceleration = GetFloat(projectileSection, "minion_acceleration", data.MinionAcceleration);
+            data.MinionTeleportDistance = GetFloat(projectileSection, "minion_teleport_distance", data.MinionTeleportDistance);
+            data.MinionAttackRange = GetFloat(projectileSection, "minion_attack_range", data.MinionAttackRange);
+            data.MinionContactDamage = GetBool(projectileSection, "contact_damage", data.MinionContactDamage);
+            data.HookSpeed = GetFloat(projectileSection, "hook_speed", data.HookSpeed);
+            data.HookRange = GetFloat(projectileSection, "hook_range", data.HookRange);
+            data.HookReelSpeed = GetFloat(projectileSection, "hook_reel_speed", data.HookReelSpeed);
+
+            if (data.AiMode == "minion_follower")
+            {
+                data.Penetrate = -1;
+                data.TimeLeft = Math.Max(data.TimeLeft, 18000);
+                data.Friendly = true;
+                data.Hostile = false;
+            }
+            else if (data.AiMode == "hook")
+            {
+                data.Penetrate = -1;
+                data.Friendly = false;
+                data.Hostile = false;
+            }
+
+            if (root.TryGetProperty("item_name", out var rootName))
+                data.Name = rootName.GetString() ?? data.Name;
+
             return data;
+        }
+
+        private ForgeBuffData ParseBuff(JsonElement root, int minionProjectileTypeId)
+        {
+            var data = new ForgeBuffData();
+            var manifest = GetManifest(root);
+
+            data.Name = GetStr(manifest, "item_name", data.Name);
+            data.ContentType = NormalizeContentType(GetStr(manifest, "type", data.ContentType));
+            data.SubType = GetStr(manifest, "sub_type", data.SubType);
+            data.Tooltip = GetStr(manifest, "tooltip", data.Tooltip);
+
+            JsonElement buffSection = manifest;
+            if (!TryGetObject(manifest, "buff", out buffSection))
+            {
+                TryGetObject(manifest, "summon", out buffSection);
+            }
+            if (buffSection.ValueKind == JsonValueKind.Undefined)
+            {
+                TryGetObject(manifest, "mechanics", out buffSection);
+            }
+
+            data.MinionProjectileSlot = GetInt(buffSection, "minion_projectile_slot", data.MinionProjectileSlot);
+            data.MinionProjectileTypeId = GetInt(buffSection, "minion_projectile_type_id", minionProjectileTypeId);
+            data.MinionSlots = GetFloat(buffSection, "minion_slots", data.MinionSlots);
+            data.MinionHoverHeight = GetFloat(buffSection, "minion_hover_height", data.MinionHoverHeight);
+            data.MinionSpeed = GetFloat(buffSection, "minion_speed", data.MinionSpeed);
+            data.MinionAcceleration = GetFloat(buffSection, "minion_acceleration", data.MinionAcceleration);
+            data.MinionTeleportDistance = GetFloat(buffSection, "minion_teleport_distance", data.MinionTeleportDistance);
+            data.MinionAttackRange = GetFloat(buffSection, "minion_attack_range", data.MinionAttackRange);
+            data.BuffTime = GetInt(buffSection, "buff_time", data.BuffTime);
+            data.NoSave = GetBool(buffSection, "no_save", data.NoSave);
+            data.NoTimeDisplay = GetBool(buffSection, "no_time_display", data.NoTimeDisplay);
+            data.ContactDamage = GetBool(buffSection, "contact_damage", data.ContactDamage);
+            data.AiMode = GetStr(buffSection, "minion_ai_mode", data.AiMode);
+
+            if (data.MinionProjectileTypeId < 0 && minionProjectileTypeId > 0)
+                data.MinionProjectileTypeId = minionProjectileTypeId;
+
+            return data;
+        }
+
+        private void ApplyContentTypeDefaults(ForgeItemData data)
+        {
+            switch (data.ContentType)
+            {
+                case "Accessory":
+                    data.Accessory = true;
+                    data.NoMelee = true;
+                    data.Damage = 0;
+                    if (data.UseStyleName == "Swing")
+                        data.UseStyleName = "HoldUp";
+                    break;
+                case "Summon":
+                    data.DamageClassName = "Summon";
+                    data.NoMelee = true;
+                    if (data.UseStyleName == "Swing")
+                        data.UseStyleName = "Shoot";
+                    if (data.MinionAiMode.Length == 0)
+                        data.MinionAiMode = "minion_follower";
+                    break;
+                case "Consumable":
+                    data.Consumable = true;
+                    if (data.HealLife > 0 && data.UseStyleName == "Swing")
+                        data.UseStyleName = "EatFood";
+                    else if (data.HealMana > 0 && data.UseStyleName == "Swing")
+                        data.UseStyleName = "Drink";
+                    break;
+                case "Tool":
+                    if (string.Equals(data.SubType, "Hook", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(data.SubType, "Fishing", StringComparison.OrdinalIgnoreCase))
+                    {
+                        data.NoMelee = true;
+                        if (data.UseStyleName == "Swing")
+                            data.UseStyleName = "Shoot";
+                    }
+                    break;
+            }
+        }
+
+        private void ApplySubTypeDefaults(ForgeItemData data)
+        {
+            if (data.ContentType == "Summon")
+            {
+                data.DamageClassName = "Summon";
+                if (string.Equals(data.SubType, "Staff", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(data.SubType, "Wand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(data.SubType, "Tome", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(data.SubType, "Spellbook", StringComparison.OrdinalIgnoreCase))
+                {
+                    data.UseStyleName = "Shoot";
+                }
+            }
+            else if (data.ContentType == "Weapon")
+            {
+                data.DamageClassName = data.SubType switch
+                {
+                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
+                        or "Shotgun" or "Launcher" or "Cannon" => "Ranged",
+                    "Staff" or "Wand" or "Tome" or "Spellbook" => "Magic",
+                    _ => data.DamageClassName,
+                };
+
+                data.UseStyleName = data.SubType switch
+                {
+                    "Gun" or "Bow" or "Repeater" or "Rifle" or "Pistol"
+                        or "Shotgun" or "Launcher" or "Cannon"
+                        or "Staff" or "Wand" or "Tome" or "Spellbook" => "Shoot",
+                    "Spear" or "Lance" => "Thrust",
+                    _ => data.UseStyleName,
+                };
+            }
+
+            if (data.SubType is "Pickaxe" or "Hamaxe")
+                data.PickPower = Math.Max(data.PickPower, Math.Clamp(data.Damage * 3, 35, 225));
+            if (data.SubType is "Axe" or "Hamaxe")
+                data.AxePower = Math.Max(data.AxePower, Math.Clamp(data.Damage / 2, 7, 35));
+            if (data.SubType is "Hammer" or "Hamaxe")
+                data.HammerPower = Math.Max(data.HammerPower, Math.Clamp(data.Damage + 20, 25, 100));
+            if (string.Equals(data.SubType, "Fishing", StringComparison.OrdinalIgnoreCase))
+                data.FishingPower = Math.Max(data.FishingPower, 35);
+            if (string.Equals(data.SubType, "Hook", StringComparison.OrdinalIgnoreCase))
+                data.HookProjectileSlot = Math.Max(data.HookProjectileSlot, -1);
+        }
+
+        private static bool NeedsProjectile(ForgeItemData data, string projSpritePath)
+        {
+            if (!string.IsNullOrWhiteSpace(projSpritePath))
+                return true;
+
+            if (data.CustomProjectile && data.ShootProjectileTypeId < 0)
+                return true;
+
+            if (string.Equals(data.ContentType, "Summon", StringComparison.OrdinalIgnoreCase))
+                return data.ShootProjectileTypeId < 0;
+
+            if (string.Equals(data.ContentType, "Tool", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(data.SubType, "Hook", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(data.SubType, "Fishing", StringComparison.OrdinalIgnoreCase)))
+            {
+                return data.ShootProjectileTypeId < 0;
+            }
+
+            return data.ShootProjectileSlot >= 0;
+        }
+
+        private static bool IsCustomProjectileName(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && value.StartsWith("ModContent.ProjectileType<", StringComparison.Ordinal);
+        }
+
+        private static JsonElement GetManifest(JsonElement root)
+        {
+            return root.TryGetProperty("manifest", out var manifest) ? manifest : root;
+        }
+
+        private static bool TryGetObject(JsonElement parent, string prop, out JsonElement value)
+        {
+            if (parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(prop, out value)
+                && value.ValueKind == JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            value = default;
+            return false;
+        }
+
+        private static string GetSpritePath(JsonElement root, string prop)
+        {
+            if (!root.TryGetProperty(prop, out var el) || el.ValueKind != JsonValueKind.String)
+                return "";
+
+            string path = el.GetString() ?? "";
+            if (path == "None" || path == "null")
+                return "";
+            return path;
+        }
+
+        private static int ResolveProjectileId(string value)
+        {
+            return ResolveStaticInt(typeof(ProjectileID), value);
+        }
+
+        private static int ResolveBuffId(string value)
+        {
+            return ResolveStaticInt(typeof(BuffID), value);
+        }
+
+        private static int ResolveAmmoId(string value)
+        {
+            return ResolveStaticInt(typeof(AmmoID), value);
+        }
+
+        private static int ResolveStaticInt(Type staticType, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return -1;
+
+            string token = value.Trim();
+            if (token.StartsWith("ModContent.", StringComparison.Ordinal))
+                return -1;
+
+            int dot = token.LastIndexOf('.');
+            if (dot >= 0)
+                token = token[(dot + 1)..];
+
+            var field = staticType.GetField(token, BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+            if (field != null && field.FieldType == typeof(int))
+                return (int)field.GetValue(null)!;
+
+            return -1;
         }
 
         private void LoadItemTexture(int slot, string path)
@@ -347,7 +652,7 @@ namespace ForgeConnector
                 if (typeId > 0)
                 {
                     if (SetTextureAssetValue(TextureAssets.Item, typeId, tex))
-                        Mod.Logger.Info($"[ForgeConnector] Loaded item texture: {path} ({tex.Width}x{tex.Height}) → type {typeId}");
+                        Mod.Logger.Info($"[ForgeConnector] Loaded item texture: {path} ({tex.Width}x{tex.Height}) -> type {typeId}");
                     else
                         Mod.Logger.Warn($"[ForgeConnector] Item texture loaded to ManifestStore but TextureAssets reflection failed for type {typeId}");
                 }
@@ -370,7 +675,7 @@ namespace ForgeConnector
                 if (typeId > 0)
                 {
                     if (SetTextureAssetValue(TextureAssets.Projectile, typeId, tex))
-                        Mod.Logger.Info($"[ForgeConnector] Loaded projectile texture: {path} ({tex.Width}x{tex.Height}) → type {typeId}");
+                        Mod.Logger.Info($"[ForgeConnector] Loaded projectile texture: {path} ({tex.Width}x{tex.Height}) -> type {typeId}");
                     else
                         Mod.Logger.Warn($"[ForgeConnector] Projectile texture loaded to ManifestStore but TextureAssets reflection failed for type {typeId}");
                 }
@@ -398,7 +703,7 @@ namespace ForgeConnector
             var assetType = asset.GetType();
             var flags = BindingFlags.NonPublic | BindingFlags.Instance;
 
-            // ReLogic.Content.Asset<T> stores the value — field name varies by version
+            // ReLogic.Content.Asset<T> stores the value - field name varies by version
             var valueField = assetType.GetField("ownValue", flags)
                           ?? assetType.GetField("_value", flags)
                           ?? assetType.GetField("value", flags);
@@ -616,6 +921,19 @@ namespace ForgeConnector
             catch { }
         }
 
+        private static JsonElement GetOptionalObject(JsonElement parent, string prop)
+        {
+            return TryGetObject(parent, prop, out var value) ? value : default;
+        }
+
+        private static string NormalizeContentType(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "Weapon";
+
+            return value.Trim();
+        }
+
         private static int ParseRarity(string rarityStr) => rarityStr switch
         {
             "ItemRarityID.White" => ItemRarityID.White,
@@ -633,17 +951,32 @@ namespace ForgeConnector
             _ => ItemRarityID.White,
         };
 
-        private static string GetStr(JsonElement el, string prop, string def = "") =>
-            el.TryGetProperty(prop, out var v) ? v.GetString() ?? def : def;
+        private static string GetStr(JsonElement el, string prop, string def = "")
+        {
+            return el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v)
+                ? v.GetString() ?? def
+                : def;
+        }
 
-        private static int GetInt(JsonElement el, string prop, int def = 0) =>
-            el.TryGetProperty(prop, out var v) && v.TryGetInt32(out int i) ? i : def;
+        private static int GetInt(JsonElement el, string prop, int def = 0)
+        {
+            return el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.TryGetInt32(out int i)
+                ? i
+                : def;
+        }
 
-        private static float GetFloat(JsonElement el, string prop, float def = 0f) =>
-            el.TryGetProperty(prop, out var v) && v.TryGetDouble(out double d) ? (float)d : def;
+        private static float GetFloat(JsonElement el, string prop, float def = 0f)
+        {
+            return el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.TryGetDouble(out double d)
+                ? (float)d
+                : def;
+        }
 
-        private static bool GetBool(JsonElement el, string prop, bool def = false) =>
-            el.TryGetProperty(prop, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
-                ? v.GetBoolean() : def;
+        private static bool GetBool(JsonElement el, string prop, bool def = false)
+        {
+            return el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? v.GetBoolean()
+                : def;
+        }
     }
 }
