@@ -145,7 +145,6 @@ async def run_pipeline(request: dict[str, Any]) -> None:
 
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
-    sub_type: str | None = request.get("sub_type")
     crafting_station: str | None = request.get("crafting_station")
 
     if not prompt:
@@ -158,9 +157,7 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     log.info("▸ Architect — generating manifest for: %s", prompt[:80])
     _set_stage("Architect — Designing item...", 15)
     architect = ArchitectAgent()
-    manifest: dict = architect.generate_manifest(
-        prompt=prompt, tier=tier, sub_type=sub_type, crafting_station=crafting_station,
-    )
+    manifest: dict = architect.generate_manifest(prompt=prompt, tier=tier, crafting_station=crafting_station)
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)
 
