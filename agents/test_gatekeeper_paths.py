@@ -60,3 +60,20 @@ def test_integrator_root_status_mapping_finishing() -> None:
     assert got["status"] == "building"
     assert got["stage_pct"] == 95
     assert "Almost done" in got["stage_label"]
+
+
+def test_parse_errors_extracts_tml003_packaging_lock() -> None:
+    """When compile succeeds but packaging fails (game holds .tmod), surface TML003 not UNKNOWN."""
+    from gatekeeper.gatekeeper import Integrator
+
+    log = """\
+Compiling ForgeGeneratedMod.dll
+Compilation finished with 0 errors and 0 warnings
+Packaging: ForgeGeneratedMod
+tModLoader: Mod Build error TML003: Please close tModLoader or disable the mod in-game to build mods directly.
+System.IO.IOException: The process cannot access the file
+"""
+    errors = Integrator._parse_errors(log)
+    assert len(errors) >= 1
+    assert errors[0].code == "TML003"
+    assert "close tmodloader" in errors[0].message.lower()

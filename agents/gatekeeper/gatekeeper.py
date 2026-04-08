@@ -42,6 +42,12 @@ _ERROR_RE = re.compile(
     re.MULTILINE,
 )
 
+# tModLoader packaging step (after Roslyn) — e.g. TML003 when .tmod is locked by the game
+_TML_ERROR_RE = re.compile(
+    r"tModLoader:\s*Mod Build error\s+(?P<code>TML\d+):\s*(?P<message>.+)$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 # Regex: class FooBar : ModItem
 _ITEM_NAME_RE = re.compile(r"class\s+(\w+)\s*:\s*ModItem\b")
 
@@ -192,14 +198,21 @@ class Integrator:
 
     @staticmethod
     def _parse_errors(output: str) -> list[RoslynError]:
-        """Extract structured Roslyn errors from dotnet build output."""
-        errors = []
+        """Extract Roslyn CS#### errors and tModLoader TML### packaging errors from build output."""
+        errors: list[RoslynError] = []
         for m in _ERROR_RE.finditer(output):
             errors.append(RoslynError(
                 code=m.group("code"),
                 message=m.group("message"),
                 line=int(m.group("line")),
                 file=m.group("file"),
+            ))
+        for m in _TML_ERROR_RE.finditer(output):
+            errors.append(RoslynError(
+                code=m.group("code"),
+                message=m.group("message").strip(),
+                line=None,
+                file=None,
             ))
         return errors
 
