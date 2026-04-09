@@ -5,19 +5,10 @@ from __future__ import annotations
 import json
 import re
 import textwrap
-import warnings
 
-# LangChain's with_structured_output(strict=True) internally creates a model
-# with `parsed: None` as a default, then fills it with the actual Pydantic
-# instance. Pydantic 2 warns during that intermediate serialization step —
-# this is a LangChain bug, not ours.  The message is multiline so we match
-# just the first line which is stable across Pydantic versions.
-warnings.filterwarnings(
-    "ignore",
-    message="Pydantic serializer warnings",
-    category=UserWarning,
-    module="pydantic",
-)
+from agent_warnings import suppress_langchain_pydantic_warnings
+
+suppress_langchain_pydantic_warnings()
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
@@ -25,6 +16,7 @@ from langchain_openai import ChatOpenAI
 try:
     from forge_master.models import CSharpOutput, ForgeError, ForgeManifest, ForgeOutput
     from forge_master.prompts import build_codegen_prompt, build_repair_prompt
+    from forge_master.reviewer import WeaponReviewer
     from forge_master.templates import (
         DAMAGE_CLASS_MAP,
         USE_STYLE_MAP,
@@ -34,6 +26,7 @@ try:
 except ImportError:
     from models import CSharpOutput, ForgeError, ForgeManifest, ForgeOutput
     from prompts import build_codegen_prompt, build_repair_prompt
+    from reviewer import WeaponReviewer
     from templates import (
         DAMAGE_CLASS_MAP,
         USE_STYLE_MAP,
@@ -56,12 +49,12 @@ class CoderAgent:
 
     def __init__(self, model_name: str = "gpt-5.4") -> None:
         # GPT-5 Nano does not support the temperature parameter.
-        self._llm = ChatOpenAI(model=model_name, timeout=120)
+        self._llm = ChatOpenAI(model=model_name, timeout=300, reasoning_effort="high")
 
         # Code generation: prompt → LLM → structured Pydantic output
         self._gen_chain = (
             build_codegen_prompt()
-            | self._llm.with_structured_output(CSharpOutput, strict=True)
+            | self._llm.with_structured_output(CSharpOutput)
         )
 
         # Repair: prompt → LLM → raw string (corrected C# source)
@@ -70,6 +63,9 @@ class CoderAgent:
             | self._llm
             | StrOutputParser()
         )
+
+        # Logic review step
+        self._reviewer = WeaponReviewer(model_name=model_name)
 
     # ------------------------------------------------------------------
     # Public API
@@ -128,7 +124,24 @@ class CoderAgent:
                 ),
             ).model_dump()
 
-        # 3. Generate hjson deterministically
+        # 3. Game-logic review
+        cs_code, review_output = self._reviewer.review(manifest, cs_code)
+
+        if not review_output.approved:
+            issue_list = [
+                f"[{i.severity}] {i.category}: {i.description}" 
+                for i in review_output.issues
+            ]
+            return ForgeOutput(
+                status="error",
+                error=ForgeError(
+                    code="LOGIC",
+                    message="Compiler validation passed, but game-logic review failed: "
+                    + "; ".join(issue_list),
+                ),
+            ).model_dump()
+
+        # 4. Generate hjson deterministically
         hjson_code = self._generate_hjson(
             item_name=parsed.item_name,
             display_name=parsed.display_name,
