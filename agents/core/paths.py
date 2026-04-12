@@ -1,8 +1,4 @@
-"""Shared ModSources path resolution for orchestrator, Gatekeeper, and tests.
-
-Matches Bubble Tea TUI logic: FORGE_MOD_SOURCES_DIR → config.toml (root keys) → OS default.
-See docs/plans/2026-04-08-forge-modsources-resolution.md
-"""
+"""Shared ModSources path resolution for orchestrator, Gatekeeper, and tests."""
 
 from __future__ import annotations
 
@@ -17,7 +13,7 @@ def config_toml_path() -> Path:
 
 
 def _trim_inline_comment(val: str) -> str:
-    """Match Go trimInlineComment for TOML values (strip # outside quotes)."""
+    """Strip TOML inline comments outside quotes."""
     in_quote = 0
     escaped = False
     for i, ch in enumerate(val):
@@ -40,7 +36,7 @@ def _trim_inline_comment(val: str) -> str:
 
 
 def read_mod_sources_dir_from_config() -> str:
-    """Read mod_sources_dir from ~/.config/theforge/config.toml (root keys only, before any [section])."""
+    """Read the root-level ``mod_sources_dir`` from config.toml."""
     cfg_path = config_toml_path()
     try:
         data = cfg_path.read_text(encoding="utf-8")
@@ -69,7 +65,7 @@ def read_mod_sources_dir_from_config() -> str:
 
 
 def mod_sources_root() -> Path:
-    """Resolved tModLoader ModSources directory (same precedence as TUI modSourcesDir)."""
+    """Resolve the tModLoader ModSources directory."""
     override = os.environ.get("FORGE_MOD_SOURCES_DIR", "").strip()
     if override:
         return Path(override).expanduser()
@@ -82,7 +78,21 @@ def mod_sources_root() -> Path:
     system = platform.system().lower()
     if system == "windows":
         user_profile = Path(os.environ.get("USERPROFILE") or home)
-        return user_profile / "Documents" / "My Games" / "Terraria" / "tModLoader" / "ModSources"
+        return (
+            user_profile
+            / "Documents"
+            / "My Games"
+            / "Terraria"
+            / "tModLoader"
+            / "ModSources"
+        )
     if system == "linux":
         return home / ".local" / "share" / "Terraria" / "tModLoader" / "ModSources"
-    return home / "Library" / "Application Support" / "Terraria" / "tModLoader" / "ModSources"
+    return (
+        home
+        / "Library"
+        / "Application Support"
+        / "Terraria"
+        / "tModLoader"
+        / "ModSources"
+    )

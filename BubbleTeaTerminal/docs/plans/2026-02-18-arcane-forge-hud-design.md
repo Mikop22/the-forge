@@ -1,37 +1,15 @@
 # Arcane Forge HUD Design
 
-**Date:** 2026-02-18
+Archived design summary for the Bubble Tea visual refresh.
 
 ## Goal
-Elevate the existing Bubble Tea terminal flow into a distinct “Arcane Forge HUD” with stronger visual identity, subtle animation, and improved state readability without changing core navigation.
 
-## Scope
-- Preserve existing 5-screen flow (input, mode, wizard, forge, staging)
-- Add shared shell rendering (ember strip + state frame)
-- Add compact-mode fallback for narrow terminals
-- Add forge heat/progress feedback and rotating forge verbs
-- Add staged item reveal and simple rune/sigil cues in wizard/staging
+Keep the existing 5-screen flow, but wrap it in a more distinct forge-themed shell.
 
-## Non-Goals
-- No persistence layer
-- No mouse interactions
-- No additional dependencies beyond current Bubble Tea stack
+## Main Changes
 
-## UI System
-- Semantic colors and styles for calm/charged/hot states
-- Shared shell wrapper around per-screen content
-- Decorative elements disabled in compact mode
-
-## Behavior Additions
-- Tick-driven animation counters
-- Heat value constrained to 0..100 while forging
-- Staging reveal phases for newly crafted item display
-
-## Error Handling
-- Keep existing prompt validation behavior
-- Keep Ctrl-C quit behavior from all states
-
-## Testing
-- Add tests for heat progression bounds
-- Add tests for compact mode threshold from window sizing
-- Add tests for reveal phase progression and reset behavior
+- Shared shell rendering around per-screen content
+- Compact-mode fallback for smaller terminals
+- Tick-driven animation state
+- Heat/progress feedback while forging
+- Staged reveal cues on the staging screen

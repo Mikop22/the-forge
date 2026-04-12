@@ -1,262 +1,37 @@
 # Combat Package V2 Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
->
-> **Execution Mode Chosen:** Subagent-Driven Development in the current session. Before implementation, invoke `superpowers:subagent-driven-development`. Use one fresh subagent per task, review the result after each task, then continue to the next task.
+Archived summary of the package-first combat work.
 
-**Goal:** Add a package-first weapon authoring model for the compiled mod path, with deterministic lowering into legacy projectile fields so generated weapons are more coherent, more distinct, and safer than the current `shot_style` / `ProjectileID.*`-driven path.
+## Goal
 
-**Architecture:** Introduce a shared Python combat package registry and resolver that owns the authored package IR, package compatibility rules, and legacy-field derivation. Architect emits bounded package-level fields, the resolver produces `resolved_combat` plus derived legacy fields, and Forge Master uses the resolved behavior as source of truth while preserving legacy fallback behavior. Keep `ForgeConnector` instant-inject support on legacy plumbing in phase 1; compiled mod generation is the primary target.
+Replace free-form projectile-first authoring with bounded combat packages that lower deterministically into legacy fields.
 
-**Tech Stack:** Python 3.10+, Pydantic, pytest, LangChain/OpenAI prompts, Forge Master template/reviewer pipeline, Gatekeeper+tModLoader headless builds, ForgeConnector live injection path for manual smoke verification.
+## Phase-1 Bounds
 
----
+- Packages: `storm_brand`, `orbit_furnace`, `frost_shatter`
+- FX profiles: `celestial_shock`, `ember_forge`, `glacial_burst`
+- Compiled mod path is the main target.
+- Legacy projectile fields remain supported as fallback plumbing.
 
-## Scope And Constraints
+## Main Architecture
 
-- Phase 1 supports exactly three authored packages: `storm_brand`, `orbit_furnace`, `frost_shatter`.
-- Phase 1 supports bounded presentation profiles only: `celestial_shock`, `ember_forge`, `glacial_burst`.
-- `combat_package` is LLM-authored.
-- Combo and finisher semantics are resolver-authored, not free-form LLM strings.
-- `shot_style`, `custom_projectile`, and `shoot_projectile` remain supported as legacy fallback/internal plumbing.
-- The compiled mod path is the primary rollout target.
-- Do not expand `ForgeConnector` runtime package behavior in this phase unless needed for non-invasive parsing/storage.
+1. Add a shared combat package registry/resolver.
+2. Let `Architect` emit package fields.
+3. Resolve package metadata into `resolved_combat`.
+4. Derive legacy projectile fields automatically.
+5. Keep `Forge Master` package-aware while preserving legacy fallback behavior.
 
 ## Success Criteria
 
-- Architect can emit valid package-first manifests using bounded enums.
-- The manifest layer resolves package metadata deterministically into `resolved_combat`.
-- Legacy projectile fields are derived automatically for package manifests.
-- Forge Master routes reference code snippets by package before falling back to `shot_style`.
-- Forge Master prompt and reviewer understand the three phase-1 packages.
-- Existing legacy `shot_style` behavior keeps working.
-- Existing projectile visibility safeguards stay intact.
-- Targeted test suites pass.
-- Headless tModLoader build still works.
-- Manual live injection still works for at least one generated package weapon.
+- Valid package-first manifests.
+- Deterministic lowering to legacy fields.
+- Existing legacy behavior still works.
+- Builds still pass through Gatekeeper.
+- Live injection still works for at least one generated package weapon.
 
-## Near-In-Game Validation Strategy
+## Why This Was Compressed
 
-Use three layers of feedback:
-
-1. Deterministic unit/regression tests
-2. Headless mod compilation through Gatekeeper
-3. Manual live inject/reload with `ForgeConnector` enabled in tModLoader
-
-Closest practical in-game feedback available to the agent:
-
-- `agents/gatekeeper/gatekeeper.py` can stage and build the generated mod against tModLoader.
-- `agents/orchestrator_smoke.py` can exercise the real orchestrator status flow in isolation.
-- The existing TUI + `ForgeConnector` path can live-inject the generated weapon into a running game for manual playtesting.
-
-What still requires human judgment:
-
-- payoff readability
-- combat feel
-- audiovisual impact at play speed
-- whether the weapon actually has "wow factor"
-
-For phase 1, add debug-friendly generated behavior where practical so manual testing can confirm:
-
-- seed events happen
-- escalate state increments
-- finisher fires
-- state resets correctly
-
-### Task 1: Add Shared Combat Package Registry
-
-**Files:**
-- Create: `agents/core/combat_packages.py`
-- Create: `agents/core/test_combat_packages.py`
-
-**Step 1: Write the failing test**
-
-```python
-from core.combat_packages import resolve_combat_package
-
-
-def test_storm_brand_lowers_to_mark_and_starfall():
-    resolved = resolve_combat_package(
-        combat_package="storm_brand",
-        content_type="Weapon",
-        sub_type="Staff",
-        delivery_style="direct",
-        payoff_rate="fast",
-        fx_profile="celestial_shock",
-    )
-    assert resolved.package_key == "storm_brand"
-    assert resolved.delivery_module == "direct_seed_bolt"
-    assert resolved.combo_module == "npc_marks_3"
-    assert resolved.finisher_module == "starfall_burst"
-    assert resolved.player_state_kind == "none"
-    assert resolved.npc_state_kind == "mark_counter"
-    assert resolved.legacy_projection.shot_style == "direct"
-    assert resolved.legacy_projection.custom_projectile is True
-    assert resolved.legacy_projection.projectile_visuals_required is True
-
-
-def test_invalid_package_subtype_combo_is_rejected():
-    try:
-        resolve_combat_package(
-            combat_package="orbit_furnace",
-            content_type="Tool",
-            sub_type="Pickaxe",
-            delivery_style="direct",
-            payoff_rate="fast",
-            fx_profile="ember_forge",
-        )
-    except ValueError as exc:
-        assert "orbit_furnace" in str(exc)
-    else:
-        raise AssertionError("expected ValueError")
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `./.venv/bin/pytest core/test_combat_packages.py -v`
-Expected: FAIL with import errors or missing resolver/models.
-
-**Step 3: Write minimal implementation**
-
-Add a hard-bounded registry with exactly these literals:
-
-```python
-CombatPackageLiteral = Literal["storm_brand", "orbit_furnace", "frost_shatter"]
-DeliveryStyleLiteral = Literal["direct"]
-PayoffRateLiteral = Literal["fast", "medium"]
-FxProfileLiteral = Literal["celestial_shock", "ember_forge", "glacial_burst"]
-```
-
-Define exact resolver output types:
-
-```python
-@dataclass(frozen=True)
-class LegacyProjection:
-    shot_style: str
-    custom_projectile: bool
-    shoot_projectile: str | None
-    projectile_visuals_required: bool
-
-
-@dataclass(frozen=True)
-class ResolvedCombat:
-    package_key: str
-    delivery_module: str
-    combo_module: str
-    finisher_module: str
-    presentation_module: str
-    player_state_kind: str
-    npc_state_kind: str
-    legacy_projection: LegacyProjection
-```
-
-Resolver behavior:
-
-- `storm_brand` -> `direct_seed_bolt` + `npc_marks_3` + `starfall_burst`
-- `orbit_furnace` -> `direct_seed_bolt` + `player_satellites_4` + `ember_divebomb`
-- `frost_shatter` -> `direct_seed_bolt` + `npc_freeze_threshold` + `crystal_fan_burst`
-
-Reject unsupported `content_type` / `sub_type` combinations explicitly.
-
-**Step 4: Run test to verify it passes**
-
-Run: `./.venv/bin/pytest core/test_combat_packages.py -v`
-Expected: PASS
-
-**Step 5: Commit**
-
-```bash
-git add core/combat_packages.py core/test_combat_packages.py
-git commit -m "feat: add combat package registry"
-```
-
-### Task 2: Extend Architect Models With Package Fields And Lowering
-
-**Files:**
-- Modify: `agents/architect/models.py:109-117`
-- Modify: `agents/architect/models.py:393-445`
-- Modify: `agents/architect/models.py:479-529`
-- Modify: `agents/architect/models.py:582-734`
-- Modify: `agents/architect/test_architect_models.py:23-296`
-- Modify: `agents/tests/test_projectile_pipeline_fixes.py:50-240`
-
-**Step 1: Write the failing test**
-
-```python
-def test_llm_mechanics_accepts_combat_package_fields():
-    m = LLMMechanics(
-        combat_package="storm_brand",
-        delivery_style="direct",
-        payoff_rate="fast",
-        fx_profile="celestial_shock",
-    )
-    assert m.combat_package == "storm_brand"
-
-
-def test_item_manifest_derives_legacy_fields_from_package():
-    manifest = ItemManifest.model_validate(
-        {
-            "item_name": "StormBrand",
-            "display_name": "Storm Brand",
-            "content_type": "Weapon",
-            "sub_type": "Staff",
-            "stats": {"damage": 12, "knockback": 4.0, "use_time": 24, "rarity": "ItemRarityID.White"},
-            "visuals": {"description": "a crackling blue staff", "color_palette": [], "icon_size": [48, 48]},
-            "mechanics": {
-                "combat_package": "storm_brand",
-                "delivery_style": "direct",
-                "payoff_rate": "fast",
-                "crafting_material": "ItemID.Wood",
-                "crafting_cost": 5,
-                "crafting_tile": "TileID.WorkBenches",
-            },
-            "presentation": {"fx_profile": "celestial_shock"},
-        },
-        context={"tier": "Tier1_Starter"},
-    )
-    assert manifest.mechanics.shot_style == "direct"
-    assert manifest.mechanics.custom_projectile is True
-    assert manifest.projectile_visuals is not None
-    assert manifest.resolved_combat.package_key == "storm_brand"
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `./.venv/bin/pytest architect/test_architect_models.py tests/test_projectile_pipeline_fixes.py -v`
-Expected: FAIL with unknown fields or missing `resolved_combat`.
-
-**Step 3: Write minimal implementation**
-
-In `architect/models.py`:
-
-- import literals and resolver from `core.combat_packages`
-- add bounded fields to `LLMMechanics` and `Mechanics`:
-  - `combat_package`
-  - `delivery_style`
-  - `payoff_rate`
-- add `Presentation` model with bounded `fx_profile`
-- add `resolved_combat` to both `LLMItemOutput` and `ItemManifest`
-- when `combat_package` is present, resolve it deterministically
-- derive legacy fields from `resolved_combat.legacy_projection`
-- preserve current legacy behavior when `combat_package` is absent
-- keep `projectile_visuals` auto-fill, but drive it from the resolved legacy projection requirement, not only `shot_style != "direct"`
-
-**Step 4: Run test to verify it passes**
-
-Run: `./.venv/bin/pytest architect/test_architect_models.py tests/test_projectile_pipeline_fixes.py -v`
-Expected: PASS
-
-**Step 5: Commit**
-
-```bash
-git add architect/models.py architect/test_architect_models.py tests/test_projectile_pipeline_fixes.py
-git commit -m "feat: add package lowering to architect manifests"
-```
-
-### Task 3: Switch Architect Prompt To Package-First Authoring
-
-**Files:**
-- Modify: `agents/architect/weapon_prompt.py:11-80`
+The original file mostly contained task-by-task execution detail. The bounded scope and architecture are the durable parts.
 
 **Step 1: Write the failing test**
 

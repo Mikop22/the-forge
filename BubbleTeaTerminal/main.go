@@ -15,8 +15,6 @@ import (
 	"theforge/internal/ipc"
 )
 
-// ---------------------------------------------------------------------------
-
 func initialModel() model {
 	ti := textinput.New()
 	ti.Placeholder = "Describe your forged item..."
@@ -55,12 +53,12 @@ func initialModel() model {
 	wizardList.SetHeight(12)
 
 	return model{
-		state:       screenMode,
-		textInput:   ti,
+		state:        screenMode,
+		textInput:    ti,
 		previewInput: pi,
-		modeList:    modeList,
-		wizardList:  wizardList,
-		spinner:     s,
+		modeList:     modeList,
+		wizardList:   wizardList,
+		spinner:      s,
 	}
 }
 
@@ -108,9 +106,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 }
-
-
-
 func (m model) View() string {
 	content := m.screenView()
 	panel := m.renderShell(content)
@@ -145,17 +140,11 @@ func (m model) screenView() string {
 		return ""
 	}
 }
-
-
-
-
 func animTickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
 		return animTickMsg(t)
 	})
 }
-
-
 func buildMetaLine(item craftedItem) string {
 	parts := []string{}
 	if item.contentType != "" {
@@ -172,8 +161,6 @@ func buildMetaLine(item craftedItem) string {
 	}
 	return strings.Join(parts, " · ")
 }
-
-
 func (m model) renderShell(content string) string {
 	ember := styles.Ember.Render(m.emberStrip())
 	frame := styles.FrameCalm
@@ -233,9 +220,6 @@ func truncateLabel(value string, maxLen int) string {
 	}
 	return value[:maxLen-3] + "..."
 }
-
-
-
 func main() {
 	ipc.EnsureOrchestrator()
 	ipc.WarnPathMismatches()

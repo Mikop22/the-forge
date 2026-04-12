@@ -1,263 +1,32 @@
 # Weapon Lab Hidden Audition Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
->
-> **Execution Mode Chosen:** Subagent-Driven Development in the current session. Before implementation, invoke `superpowers:subagent-driven-development`. Use one fresh implementer subagent per task, then run spec review and code-quality review before moving to the next task. Run the listed tests after every task. Add a final stress-test agent pass near the end.
+Archived implementation sketch for the hidden-audition weapon lab.
 
-**Goal:** Build a hidden-audition weapon lab that generates multiple weapon theses, judges them for novelty/payoff/punch, expands only the strongest finalists into manifests and art, validates the winner with runtime evidence, and only then reveals it in the TUI.
+## Goal
 
-**Architecture:** Add a runtime capability matrix and telemetry event schema first, then a thesis layer, calibrated hidden tournament, bounded art strategy profiles, deterministic sprite-readability gates, candidate archive, runtime behavior contracts, and a final winner gate that only runs after art and runtime evidence exist. Keep the existing manifest/package/runtime layers, but stop surfacing the first valid result.
+Build a pipeline that generates multiple weapon theses, scores them, validates them with art and runtime evidence, and reveals only the winner.
 
-**Tech Stack:** Python 3.10+, Pydantic, pytest, LangChain/OpenAI prompts, existing Architect/Forge Master/Pixelsmith agents, Gatekeeper+tModLoader validation, ForgeConnector instant inject bridge, Bubble Tea TUI.
+## Planned Workstreams
 
----
+1. Runtime capability matrix and telemetry events.
+2. Candidate archive and ranking policy.
+3. Research-informed thesis prompting.
+4. Hidden thesis generation and judging.
+5. Package-first finalist expansion.
+6. Bounded art-direction profiles and sprite gates.
+7. Hidden sprite audition.
+8. Runtime behavior contracts and lab evaluation.
+9. Final winner gate before the TUI reveal.
 
-## Ground Rules
+## Main Constraints
 
-- Implement in the existing worktree: `/Users/user/Desktop/the-forge/.worktrees/combat-package-v2`
-- Follow @superpowers:test-driven-development for every task.
-- Use @superpowers:subagent-driven-development for execution.
-- After each task:
-  - implementer self-checks
-  - spec reviewer gate
-  - code-quality reviewer gate
-  - rerun the named tests
-- Do not show weak hidden candidates in the TUI.
-- Do not call a candidate the winner until art, consistency, and runtime-evidence gates exist.
-- Do not commit during execution unless the user explicitly requests commits at that time.
+- Do not surface weak candidates.
+- Do not declare a winner before art and runtime evidence exist.
+- Keep implementation bounded to the current runtime and package surface.
 
-## Phase Scope
+## Why This Was Compressed
 
-This plan covers the first usable hidden-audition lab iteration:
-
-- runtime capability matrix and telemetry schema
-- candidate archive and calibrated ranking rules
-- research-informed prompt writing with source provenance
-- hidden thesis generation and judging
-- package-first finalist expansion on the supported staff surface
-- bounded art direction profiles and deterministic sprite gates
-- hidden sprite audition
-- runtime behavior contract scaffolding and lab-eval plumbing
-- reroll and wild recovery policy
-- final pre-TUI winner selection after all major gates
-
-This plan does not require unrestricted raw FAL parameter control or fully free-form LLM-authored runtime combat code.
-
-### Task 1: Add Runtime Capability Matrix And Telemetry Event Schema
-
-**Files:**
-- Create: `agents/core/runtime_capabilities.py`
-- Create: `agents/core/test_runtime_capabilities.py`
-- Create: `agents/core/telemetry_events.py`
-- Create: `agents/core/test_telemetry_events.py`
-
-**Step 1: Write the failing test**
-
-```python
-from core.runtime_capabilities import RuntimeCapabilityMatrix
-from core.telemetry_events import LabTelemetryEvent
-
-
-def test_runtime_capability_matrix_exposes_supported_loop_family():
-    matrix = RuntimeCapabilityMatrix.default()
-    assert matrix.supports(content_type="Weapon", sub_type="Staff", loop_family="mark_cashout") is True
-
-
-def test_lab_telemetry_event_has_candidate_and_event_type():
-    event = LabTelemetryEvent.model_validate(
-        {
-            "candidate_id": "cand-1",
-            "package_key": "storm_brand",
-            "event_type": "seed_triggered",
-            "timestamp_ms": 120,
-        }
-    )
-    assert event.event_type == "seed_triggered"
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `./.venv/bin/pytest core/test_runtime_capabilities.py core/test_telemetry_events.py -v`
-Expected: FAIL with import errors or missing schema.
-
-**Step 3: Write minimal implementation**
-
-Add:
-
-- `RuntimeCapabilityMatrix` describing what the instant runtime can currently express
-- `LabTelemetryEvent` with fields such as:
-  - `candidate_id`
-  - `package_key`
-  - `event_type`
-  - `timestamp_ms`
-  - `target_id`
-  - `stack_count`
-  - `fx_marker`
-  - `audio_marker`
-
-Keep the first matrix small and honest. It is acceptable to under-claim capabilities initially.
-
-**Step 4: Run test to verify it passes**
-
-Run: `./.venv/bin/pytest core/test_runtime_capabilities.py core/test_telemetry_events.py -v`
-Expected: PASS
-
-**Step 5: Commit checkpoint (only if the user later requests commits)**
-
-```bash
-git add core/runtime_capabilities.py core/test_runtime_capabilities.py core/telemetry_events.py core/test_telemetry_events.py
-git commit -m "feat: add runtime capability matrix and telemetry schema"
-```
-
-### Task 2: Add Candidate Archive, Ranking Spec, And Search Budget Models
-
-**Files:**
-- Create: `agents/core/weapon_lab_models.py`
-- Create: `agents/core/weapon_lab_archive.py`
-- Create: `agents/core/weapon_lab_ranking.py`
-- Create: `agents/core/test_weapon_lab_models.py`
-- Create: `agents/core/test_weapon_lab_archive.py`
-- Create: `agents/core/test_weapon_lab_ranking.py`
-
-**Step 1: Write the failing test**
-
-```python
-from core.weapon_lab_models import WeaponThesis, CandidateRecord
-from core.weapon_lab_ranking import RankingPolicy
-
-
-def test_ranking_policy_uses_anchor_examples():
-    policy = RankingPolicy.default()
-    assert len(policy.good_anchors) >= 1
-    assert len(policy.bad_anchors) >= 1
-
-
-def test_candidate_record_captures_rejection_reason():
-    record = CandidateRecord.model_validate(
-        {
-            "candidate_id": "cand-1",
-            "stage": "thesis",
-            "status": "rejected",
-            "rejection_reason": "no_cashout",
-        }
-    )
-    assert record.rejection_reason == "no_cashout"
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `./.venv/bin/pytest core/test_weapon_lab_models.py core/test_weapon_lab_archive.py core/test_weapon_lab_ranking.py -v`
-Expected: FAIL because archive/ranking models do not exist.
-
-**Step 3: Write minimal implementation**
-
-Add bounded models for:
-
-- `WeaponThesis`
-- `SpriteThesis`
-- `ArtDirection`
-- `BehaviorContract`
-- `CandidateRecord`
-- `SearchBudget`
-- `RankingPolicy`
-- `JudgeScore`
-
-Ensure the ranking policy includes:
-
-- hard-gate categories
-- anchor sets
-- judge disagreement policy
-- tie-break policy
-- rank-stability knobs
-
-Ensure archive models can store:
-
-- prompt
-- theses
-- finalists
-- art strategies
-- judge scores
-- rejection reasons
-- reroll ancestry
-- final winner rationale
-
-**Step 4: Run test to verify it passes**
-
-Run: `./.venv/bin/pytest core/test_weapon_lab_models.py core/test_weapon_lab_archive.py core/test_weapon_lab_ranking.py -v`
-Expected: PASS
-
-**Step 5: Commit checkpoint**
-
-```bash
-git add core/weapon_lab_models.py core/weapon_lab_archive.py core/weapon_lab_ranking.py core/test_weapon_lab_models.py core/test_weapon_lab_archive.py core/test_weapon_lab_ranking.py
-git commit -m "feat: add weapon lab archive and ranking models"
-```
-
-### Task 3: Add Research Evidence Registry And Research-Informed Prompt Rules
-
-**Files:**
-- Create: `agents/architect/research_evidence.py`
-- Create: `agents/architect/weapon_thesis_prompt.py`
-- Create: `agents/architect/test_weapon_thesis_prompt.py`
-- Modify: `agents/architect/prompts.py`
-
-**Step 1: Write the failing test**
-
-```python
-from architect.weapon_thesis_prompt import SYSTEM_PROMPT
-from architect.research_evidence import RESEARCH_RULES
-
-
-def test_weapon_thesis_prompt_is_research_informed_and_auditable():
-    assert "seed" in SYSTEM_PROMPT
-    assert "cashout" in SYSTEM_PROMPT
-    assert any(rule.source for rule in RESEARCH_RULES)
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `./.venv/bin/pytest architect/test_weapon_thesis_prompt.py -v`
-Expected: FAIL because the registry and prompt module do not exist.
-
-**Step 3: Write minimal implementation**
-
-Create a research evidence registry containing:
-
-- source provenance
-- distilled design rule
-- affected generation fields
-- affected judge fields
-
-Then create a thesis prompt that directly uses those rules to bias toward:
-
-- one strong player verb
-- visible escalation
-- payoff inside `1-3s`
-- signature sound and spectacle ladder
-- changed player behavior beyond firing another projectile
-
-**Step 4: Run test to verify it passes**
-
-Run: `./.venv/bin/pytest architect/test_weapon_thesis_prompt.py -v`
-Expected: PASS
-
-**Step 5: Commit checkpoint**
-
-```bash
-git add architect/research_evidence.py architect/weapon_thesis_prompt.py architect/test_weapon_thesis_prompt.py architect/prompts.py
-git commit -m "feat: add research evidence registry and thesis prompt"
-```
-
-### Task 4: Add Calibrated Thesis Generation And Ranking
-
-**Files:**
-- Create: `agents/architect/thesis_generator.py`
-- Create: `agents/architect/thesis_judges.py`
-- Create: `agents/architect/test_thesis_generator.py`
-- Create: `agents/architect/test_thesis_judges.py`
-- Modify: `agents/architect/architect.py`
-
-**Step 1: Write the failing test**
+The original file was a long execution script with step-by-step test snippets. For handoff, the workstreams and constraints carry most of the value.
 
 ```python
 from architect.thesis_judges import hard_reject_thesis

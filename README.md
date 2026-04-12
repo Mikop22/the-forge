@@ -1,6 +1,6 @@
 # The Forge
 
-Is an agentic item generator for Terraria. Describe any weapon you can imagine and The Forge will design it, write the mod code, generate pixel art, and inject it into your game all from the terminal interface.
+Agentic Terraria item generator. Describe an item, then The Forge designs it, writes the mod code, generates sprite art, and stages or injects it from the terminal UI.
 
 <img width="1364" height="703" alt="Screenshot 2026-03-11 at 11 13 51 AM" src="https://github.com/user-attachments/assets/ee8874e7-dd91-4678-bc0e-2ba1f12ec945" />
 
@@ -14,14 +14,12 @@ Is an agentic item generator for Terraria. Describe any weapon you can imagine a
 
 ## How It Works
 
-1. **You describe a weapon** — "A frost katana that shoots ice shards"
-2. **The Architect Agent** designs a balanced item manifest (stats, crafting recipe, visuals)
-3. **The Forge Master Agent** writes compilable C# mod code for tModLoader and tests it
-4. **The Pixelsmith Agent** generates a pixel art sprite via AI image generation
-5. **The Gatekeeper Agent** compiles the mod and stages it into your ModSources
-6. **ForgeConnector** hot-reloads the mod into your running Terraria game and signals back to the TUI when the reload is complete
-
-The entire pipeline runs from a single terminal UI. You pick your weapon idea, choose a power tier, and watch it get built in real time.
+1. Enter an item prompt.
+2. `Architect` creates the manifest.
+3. `Forge Master` generates C# mod code.
+4. `Pixelsmith` generates item and projectile art.
+5. `Gatekeeper` builds and stages the mod.
+6. `ForgeConnector` can inject it into a running tModLoader session.
 
 ## Prerequisites
 
@@ -42,7 +40,7 @@ cd the-forge
 
 ### 2. API Keys
 
-Create `agents/.env` with your keys:
+Create `agents/.env`:
 
 ```env
 OPENAI_API_KEY=your-openai-key
@@ -50,14 +48,14 @@ FAL_KEY=your-fal-key
 FAL_IMAGE_TO_IMAGE_ENABLED=true # This controls if the app will look for reference images of real objects
 ```
 
-| Key | What it's for |
-|-----|---------------|
-| `OPENAI_API_KEY` | Powers the Architect (item design), Forge Master (code gen), and reference image approval |
-| `FAL_KEY` | Powers the Pixelsmith sprite generator via fal-ai FLUX |
+| Key | Use |
+|-----|-----|
+| `OPENAI_API_KEY` | Architect, Forge Master, reference approval |
+| `FAL_KEY` | Pixelsmith generation |
 
-### 3. Model weights (Pixelsmith)
+### 3. Model weights
 
-Download the sprite model weights (hosted on Google Drive) into `agents/pixelsmith/`:
+Download the sprite model weights into `agents/pixelsmith/`:
 
 ```bash
 cd agents/pixelsmith
@@ -65,7 +63,7 @@ cd agents/pixelsmith
 python download_weights.py
 ```
 
-See `agents/README.md` for how to get the file IDs from your share links.
+See `agents/README.md` for the file IDs workflow.
 
 ### 4. Python environment
 
@@ -92,18 +90,17 @@ cd BubbleTeaTerminal
 go mod download
 ```
 
-### 7. ForgeConnector bridge mod (one-time)
+### 7. ForgeConnector bridge mod
 
-This small tModLoader mod lets The Forge hot-reload items into your running game.
+This tModLoader mod enables live injection.
 
 1. Copy the `mod/ForgeConnector/` folder into your tModLoader ModSources directory:
    - **macOS:** `~/Library/Application Support/Terraria/tModLoader/ModSources/`
    - **Windows:** `Documents/My Games/Terraria/tModLoader/ModSources/`
    - **Linux:** `~/.local/share/Terraria/tModLoader/ModSources/`
 
-2. Open Terraria → Workshop → Develop Mods → Build ForgeConnector
-
-3. Enable ForgeConnector in the Mod List
+2. Build `ForgeConnector` from Terraria's mod tools.
+3. Enable it in the mod list.
 
 ## Running The Forge
 
@@ -113,27 +110,24 @@ From the `BubbleTeaTerminal/` directory:
 go run .
 ```
 
-That's it. The TUI will auto-start the Python orchestrator in the background.
+The TUI auto-starts the Python orchestrator.
 
-### ModSources path (single source of truth)
+### ModSources resolution
 
-The TUI, Python orchestrator, Gatekeeper, and ForgeConnector all resolve the tModLoader **ModSources** folder in the same order: `FORGE_MOD_SOURCES_DIR` (if set), then `mod_sources_dir` in `~/.config/theforge/config.toml`, then the default OS path. Set `FORGE_MOD_SOURCES_DIR` when you need the game and the terminal to agree without editing config (the C# bridge reads the env var; it does not read `config.toml`).
+All components resolve `ModSources` in this order:
 
-If you see stderr warnings about mismatched paths at startup, align the env var and config file, restart the TUI, and reload the mod in tModLoader.
+1. `FORGE_MOD_SOURCES_DIR`
+2. `~/.config/theforge/config.toml` `mod_sources_dir`
+3. OS default path
 
-Only one orchestrator should run per ModSources tree; a second instance exits with a clear message and leaves a lock file at `ModSources/.forge_orchestrator.lock`.
+Only one orchestrator may run per `ModSources` tree. The lock file is `ModSources/.forge_orchestrator.lock`.
 
 ### Using the TUI
 
-1. **Type your weapon idea** and press Enter
-2. **Choose a path:**
-   - **Auto** — The AI picks everything for you
-   - **Manual** — Walk through a wizard to choose tier, damage class, weapon style, projectile, and crafting station
-3. **Watch it build** — the heat bar tracks each pipeline stage in real time
-4. **Staging screen** — your item is ready:
-   - The sprite is rendered directly in the terminal alongside the item's stats
-   - If Terraria is running with ForgeConnector, press **Enter** to inject the item live — the TUI waits for a confirmation signal from the game before marking the reload complete
-   - Press **C** to craft another item without losing your inventory
+1. Enter an item prompt.
+2. Choose `Auto` or walk the manual wizard.
+3. Watch the forge/build stages.
+4. On the staging screen, review the item and press `Enter` to inject or `C` to craft again.
 
 ### Power Tiers
 
@@ -163,9 +157,8 @@ the-forge/
 
 ## Supported Weapon Types
 
-Swords, broadswords, bows, guns, staves, wands, spears, yoyos, flails, whips, summon weapons, launchers, and more. If the user prompt describes a projectile, The Forge will generate a custom ModProjectile with its own sprite.
+Includes swords, bows, guns, staves, spears, summon weapons, launchers, and related variants. Prompts that imply projectile behavior can generate a custom `ModProjectile` and sprite.
 
 ## Reference-Aware Generation
 
-If your prompt references a known character or item ("a sword like the Master Sword", "Naruto's kunai"), the Architect will search for reference images using Playwright and use them to guide the sprite generation for higher fidelity.
-
+When the prompt references a known character or item, the pipeline can fetch reference images and use them to guide sprite generation.

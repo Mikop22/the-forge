@@ -1,4 +1,4 @@
-"""Pydantic models for the Gatekeeper module."""
+"""Gatekeeper result models."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class RoslynError(BaseModel):
-    """A single Roslyn compiler error extracted from build output."""
+    """Compiler error parsed from build output."""
 
     code: str = Field(description="Compiler error code, e.g. 'CS0103'.")
     message: str = Field(description="Full error message text.")
@@ -17,7 +17,7 @@ class RoslynError(BaseModel):
 
 
 class GatekeeperResult(BaseModel):
-    """Final output of Integrator.build_and_verify()."""
+    """Result of ``Integrator.build_and_verify()``."""
 
     status: Literal["success", "error"]
     item_name: str
