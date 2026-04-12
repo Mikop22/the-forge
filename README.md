@@ -57,7 +57,7 @@ git clone https://github.com/Mikop22/the-forge.git
 cd the-forge
 ```
 
-### 2. API keys *pending local mode for those of you with cool gpus*
+### 2. API keys: *pending local mode for those of you with cool gpus*
 
 Create `agents/.env`:
 
