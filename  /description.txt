@@ -1,2 +1,0 @@
-ForgeConnector — Bridge mod for The Forge AI item pipeline.
-Install once. Do not disable.
