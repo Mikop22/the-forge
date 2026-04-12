@@ -13,6 +13,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ from pydantic import ValidationError
 load_dotenv(Path(__file__).parent / ".env")
 
 from contracts.ipc import GenerationStatus, UserRequest
+from contracts.session_shell import SessionShellState, SessionShellStatus
 from contracts.workshop import BenchState, ShelfVariant, WorkshopRequest, WorkshopStatus
 
 try:
@@ -75,6 +77,7 @@ REQUEST_FILE = _MOD_SOURCES / "user_request.json"
 STATUS_FILE = _MOD_SOURCES / "generation_status.json"
 WORKSHOP_REQUEST_FILE = _MOD_SOURCES / "workshop_request.json"
 WORKSHOP_STATUS_FILE = _MOD_SOURCES / "workshop_status.json"
+SESSION_SHELL_STATUS_FILE = _MOD_SOURCES / "session_shell_status.json"
 WORKSHOP_SESSION_DIR = _MOD_SOURCES / ".forge_workshop_sessions"
 HEARTBEAT_FILE = _MOD_SOURCES / "orchestrator_alive.json"
 ORCHESTRATOR_LOCK_FILE = _MOD_SOURCES / ".forge_orchestrator.lock"
@@ -110,6 +113,105 @@ def _write_workshop_status(payload: dict[str, Any]) -> None:
     text = validated.model_dump_json(indent=2) + "\n"
     _atomic_write_text(WORKSHOP_STATUS_FILE, text)
     log.info("Workshop → %s", validated.last_action or "update")
+
+
+def _write_session_shell_status(payload: dict[str, Any]) -> None:
+    """Atomically write the minimal shell snapshot for the TUI."""
+    validated = SessionShellStatus.model_validate(payload)
+    text = validated.model_dump_json(indent=2) + "\n"
+    _atomic_write_text(SESSION_SHELL_STATUS_FILE, text)
+    log.info("Shell → %s", validated.session_id or "update")
+
+
+def _read_text_snapshot(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _restore_text_snapshot(path: Path, previous_text: str | None) -> None:
+    if previous_text is None:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return
+    _atomic_write_text(path, previous_text)
+
+
+def _restore_workshop_session_snapshot(
+    store: WorkshopSessionStore,
+    session_id: str,
+    previous_session: dict[str, Any] | None,
+) -> None:
+    session_path = store._session_path(session_id)
+    if previous_session is None:
+        with contextlib.suppress(FileNotFoundError):
+            session_path.unlink()
+        with contextlib.suppress(FileNotFoundError):
+            store._active_path.unlink()
+        return
+    store.save(previous_session)
+
+
+def _status_snapshot_id(path: Path) -> int | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    try:
+        return int(payload.get("snapshot_id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _reconcile_workshop_mirrors(
+    session: dict[str, Any],
+    *,
+    persist_session: bool = False,
+    store: WorkshopSessionStore | None = None,
+) -> None:
+    session_id = str(session.get("session_id", "")).strip()
+    snapshot_id = int(session.get("snapshot_id") or 0)
+    if not session_id or snapshot_id <= 0:
+        return
+
+    current_workshop_snapshot = _status_snapshot_id(WORKSHOP_STATUS_FILE)
+    current_shell_snapshot = _status_snapshot_id(SESSION_SHELL_STATUS_FILE)
+    if (
+        current_workshop_snapshot == snapshot_id
+        and current_shell_snapshot == snapshot_id
+    ):
+        return
+
+    shell = _session_shell_snapshot(session).model_copy(update={"snapshot_id": snapshot_id})
+    shell_payload = shell.model_dump(exclude_none=True)
+    workshop_payload = {
+        "session_id": session_id,
+        "snapshot_id": snapshot_id,
+        "bench": session.get("bench", {}),
+        "shelf": session.get("shelf", []),
+        "last_action": "reconciled",
+    }
+    active_store = store or WORKSHOP_STORE
+    previous_session = active_store.load(session_id) if persist_session else None
+    previous_shell_status = _read_text_snapshot(SESSION_SHELL_STATUS_FILE)
+    previous_workshop_status = _read_text_snapshot(WORKSHOP_STATUS_FILE)
+    try:
+        if persist_session:
+            active_store.save(session)
+        _write_session_shell_status(shell_payload)
+        _write_workshop_status(workshop_payload)
+    except Exception:
+        if persist_session:
+            with contextlib.suppress(Exception):
+                _restore_workshop_session_snapshot(
+                    active_store, session_id, previous_session
+                )
+        with contextlib.suppress(Exception):
+            _restore_text_snapshot(SESSION_SHELL_STATUS_FILE, previous_shell_status)
+        with contextlib.suppress(Exception):
+            _restore_text_snapshot(WORKSHOP_STATUS_FILE, previous_workshop_status)
+        raise
 
 
 def _validation_error_message(exc: ValidationError) -> str:
@@ -275,6 +377,76 @@ def _bench_snapshot(
     ).model_dump(exclude_none=True)
 
 
+def _next_snapshot_id(session: dict[str, Any]) -> int:
+    current = session.get("snapshot_id", 0)
+    try:
+        current_id = int(current)
+    except (TypeError, ValueError):
+        current_id = 0
+    snapshot_id = current_id + 1
+    session["snapshot_id"] = snapshot_id
+    return snapshot_id
+
+
+def _session_shell_snapshot(session: dict[str, Any] | None) -> SessionShellState:
+    session = session or {}
+    session_id = str(session.get("session_id", "")).strip()
+    snapshot_id = session.get("snapshot_id", 0)
+    raw_shell = session.get("session_shell")
+    if isinstance(raw_shell, dict):
+        shell = SessionShellState.model_validate(raw_shell)
+        if session_id and not shell.session_id:
+            shell = shell.model_copy(update={"session_id": session_id})
+        if snapshot_id and not shell.snapshot_id:
+            shell = shell.model_copy(update={"snapshot_id": int(snapshot_id)})
+        return shell
+    return SessionShellState(session_id=session_id, snapshot_id=int(snapshot_id or 0))
+
+
+def _emit_workshop_snapshot(
+    *,
+    session: dict[str, Any],
+    bench: dict[str, Any] | None = None,
+    shelf: list[dict[str, Any]] | None = None,
+    last_action: str,
+    error: str | None = None,
+    persist: bool = True,
+) -> None:
+    snapshot_id = _next_snapshot_id(session)
+    shell = _session_shell_snapshot(session).model_copy(update={"snapshot_id": snapshot_id})
+    shell_payload = shell.model_dump(exclude_none=True)
+    session["session_shell"] = shell_payload
+    session_id = str(session.get("session_id", "")).strip()
+    previous_session = WORKSHOP_STORE.load(session_id) if persist and session_id else None
+    previous_shell_status = _read_text_snapshot(SESSION_SHELL_STATUS_FILE)
+    previous_workshop_status = _read_text_snapshot(WORKSHOP_STATUS_FILE)
+    try:
+        if persist and session_id:
+            WORKSHOP_STORE.save(session)
+        _write_session_shell_status(shell_payload)
+        _write_workshop_status(
+            {
+                "session_id": session_id,
+                "snapshot_id": snapshot_id,
+                "bench": bench if bench is not None else session.get("bench", {}),
+                "shelf": shelf if shelf is not None else session.get("shelf", []),
+                "last_action": last_action,
+                "error": error,
+            }
+        )
+    except Exception:
+        if persist and session_id:
+            with contextlib.suppress(Exception):
+                _restore_workshop_session_snapshot(
+                    WORKSHOP_STORE, session_id, previous_session
+                )
+        with contextlib.suppress(Exception):
+            _restore_text_snapshot(SESSION_SHELL_STATUS_FILE, previous_shell_status)
+        with contextlib.suppress(Exception):
+            _restore_text_snapshot(WORKSHOP_STATUS_FILE, previous_workshop_status)
+        raise
+
+
 def _sync_ready_workshop_session(
     *,
     item_name: str,
@@ -297,15 +469,15 @@ def _sync_ready_workshop_session(
         "baseline": bench,
         "last_live": bench,
         "shelf": [],
+        "session_shell": SessionShellState(session_id=session_id).model_dump(
+            mode="json", exclude_none=True
+        ),
     }
-    WORKSHOP_STORE.save(session)
-    _write_workshop_status(
-        {
-            "session_id": session_id,
-            "bench": bench,
-            "shelf": [],
-            "last_action": "ready",
-        }
+    _emit_workshop_snapshot(
+        session=session,
+        bench=bench,
+        shelf=[],
+        last_action="ready",
     )
 
 
@@ -338,6 +510,23 @@ def _load_existing_workshop_session(session_id: str, store: WorkshopSessionStore
     return active_store.load_active()
 
 
+def _load_validation_workshop_session(
+    request: WorkshopRequest,
+    store: WorkshopSessionStore | None = None,
+) -> dict[str, Any]:
+    active_store = store or WORKSHOP_STORE
+    session_id = request.session_id.strip()
+    if session_id:
+        session = active_store.load(session_id)
+        if not session:
+            session = active_store.load_active()
+    else:
+        session = active_store.load_active()
+    if session:
+        _reconcile_workshop_mirrors(session, store=active_store)
+    return session
+
+
 def _load_or_bootstrap_workshop_session(
     request: WorkshopRequest,
     *,
@@ -348,12 +537,18 @@ def _load_or_bootstrap_workshop_session(
     session_id = request.session_id.strip()
     if session_id:
         session = active_store.load(session_id)
-        if session:
-            return session
+        if not session:
+            session = active_store.load_active()
     else:
         active = active_store.load_active()
         if active:
-            return active
+            session = active
+        else:
+            session = {}
+
+    if session:
+        _reconcile_workshop_mirrors(session, store=active_store)
+        return session
 
     if not allow_bootstrap:
         raise RuntimeError("No existing workshop session")
@@ -377,6 +572,9 @@ def _load_or_bootstrap_workshop_session(
         "baseline": bench,
         "last_live": bench,
         "shelf": [],
+        "session_shell": SessionShellState(session_id=session_id).model_dump(
+            mode="json", exclude_none=True
+        ),
     }
     active_store.save(session)
     return session
@@ -399,14 +597,16 @@ def _build_shelf_variants(session: dict[str, Any], directive: str) -> list[dict[
 
 def _write_workshop_error(message: str, session: dict[str, Any] | None = None, session_id: str = "") -> None:
     session = session or {}
-    _write_workshop_status(
-        {
-            "session_id": session_id or str(session.get("session_id", "")),
-            "bench": session.get("bench", {}),
-            "shelf": session.get("shelf", []),
-            "last_action": "error",
-            "error": message,
-        }
+    persist = bool(session)
+    if session_id and not session.get("session_id"):
+        session["session_id"] = session_id
+    _emit_workshop_snapshot(
+        session=session,
+        bench=session.get("bench", {}),
+        shelf=session.get("shelf", []),
+        last_action="error",
+        error=message,
+        persist=persist,
     )
 
 
@@ -417,6 +617,18 @@ def _handle_workshop_request(
 ) -> None:
     active_store = store or WORKSHOP_STORE
     allow_bootstrap = request.action == "variants"
+    validation_session = _load_validation_workshop_session(request, active_store)
+    current_bench_id = str((validation_session.get("bench") or {}).get("item_id") or "").strip()
+    requested_bench_id = str(request.bench_item_id or "").strip()
+    if requested_bench_id and current_bench_id and requested_bench_id != current_bench_id:
+        raise RuntimeError(
+            f"stale workshop action for bench item {requested_bench_id} (current: {current_bench_id})"
+        )
+    if requested_bench_id and not current_bench_id:
+        raise RuntimeError(
+            f"stale workshop action for bench item {requested_bench_id} (no active workshop session)"
+        )
+
     session = _load_or_bootstrap_workshop_session(request, store=active_store, allow_bootstrap=allow_bootstrap)
     action = request.action
 
@@ -447,14 +659,11 @@ def _handle_workshop_request(
     elif action == "try":
         session["last_live"] = dict(session.get("bench") or {})
 
-    active_store.save(session)
-    _write_workshop_status(
-        {
-            "session_id": session["session_id"],
-            "bench": session.get("bench", {}),
-            "shelf": session.get("shelf", []),
-            "last_action": action,
-        }
+    _emit_workshop_snapshot(
+        session=session,
+        bench=session.get("bench", {}),
+        shelf=session.get("shelf", []),
+        last_action=action,
     )
 
 

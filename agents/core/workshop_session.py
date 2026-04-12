@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from core.atomic_io import atomic_write_text
+from contracts.session_shell import SessionShellState
 
 
 class WorkshopSessionStore:
@@ -25,7 +26,23 @@ class WorkshopSessionStore:
         path = self._session_path(session_id)
         text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         atomic_write_text(path, text)
-        atomic_write_text(self._active_path, session_id + "\n")
+
+    def _session_json_paths(self) -> list[Path]:
+        if not self._root.exists():
+            return []
+        paths = [
+            path
+            for path in self._root.glob("*.json")
+            if path.name != self._active_path.name
+        ]
+        paths.sort(key=lambda path: (path.stat().st_mtime_ns, path.name))
+        return paths
+
+    def _most_recent_session_id(self) -> str | None:
+        paths = self._session_json_paths()
+        if not paths:
+            return None
+        return paths[-1].stem
 
     def load(self, session_id: str) -> dict[str, Any]:
         path = self._session_path(session_id)
@@ -33,12 +50,36 @@ class WorkshopSessionStore:
             return {}
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def save_session_shell(self, session_id: str, shell: SessionShellState) -> None:
+        session = self.load(session_id)
+        if not session:
+            session = {"session_id": session_id}
+        session["session_shell"] = shell.model_dump(mode="json", exclude_none=True)
+        self.save(session)
+
+    def load_session_shell(self, session_id: str) -> SessionShellState | None:
+        session = self.load(session_id)
+        if not session:
+            return None
+        raw_shell = session.get("session_shell")
+        if raw_shell is None:
+            return None
+        return SessionShellState.model_validate(raw_shell)
+
     def active_session_id(self) -> str | None:
+        session_id = self._most_recent_session_id()
+        if session_id is not None:
+            return session_id
         try:
-            session_id = self._active_path.read_text(encoding="utf-8").strip()
+            legacy_session_id = self._active_path.read_text(encoding="utf-8").strip()
         except OSError:
             return None
-        return session_id or None
+        if not legacy_session_id:
+            return None
+        session_path = self._session_path(legacy_session_id)
+        if session_path.exists():
+            return legacy_session_id
+        return None
 
     def load_active(self) -> dict[str, Any]:
         session_id = self.active_session_id()

@@ -1,4 +1,8 @@
-"""Pydantic models for the Forge Director workshop loop."""
+"""Pydantic models for the Forge Director workshop loop.
+
+The transcript/memory shell state lives in ``contracts.session_shell`` so the
+workshop bench/shelf transport stays small and stable.
+"""
 
 from __future__ import annotations
 
@@ -53,6 +57,7 @@ class WorkshopStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     session_id: str = ""
+    snapshot_id: int = 0
     bench: BenchState = BenchState()
     shelf: list[ShelfVariant] = []
     last_action: str | None = None
