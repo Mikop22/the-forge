@@ -41,6 +41,9 @@ namespace ForgeConnector
         private string _heartbeatPath = string.Empty;
         private string _statusPath = string.Empty;
         private string _runtimeSummaryPath = string.Empty;
+        private string _lastInjectPath = string.Empty;
+        private string _lastInjectDebugPath = string.Empty;
+        private string _runtimeAssetDir = string.Empty;
         private int _watcherRetryCooldown;
         private int _injectPollCooldown;
         private string _activeHiddenLabCandidateId = string.Empty;
@@ -67,6 +70,9 @@ namespace ForgeConnector
             _heartbeatPath = Path.Combine(_modSourcesDir, "forge_connector_alive.json");
             _statusPath    = Path.Combine(_modSourcesDir, "forge_connector_status.json");
             _runtimeSummaryPath = Path.Combine(_modSourcesDir, "forge_runtime_summary.json");
+            _lastInjectPath = Path.Combine(_modSourcesDir, "forge_last_inject.json");
+            _lastInjectDebugPath = Path.Combine(_modSourcesDir, "forge_last_inject_debug.json");
+            _runtimeAssetDir = Path.Combine(_modSourcesDir, "ForgeConnectorInjectedAssets");
 
             RegisterTemplateTypeIds();
             ForgeLabTelemetry.Configure(_modSourcesDir);
@@ -223,13 +229,31 @@ namespace ForgeConnector
                 ForgeLabTelemetry.RegisterItemContext(itemSlot, telemetryContext);
 
                 string itemSpritePath = GetSpritePath(root, "sprite_path");
-                if (!string.IsNullOrEmpty(itemSpritePath) && File.Exists(itemSpritePath))
-                {
-                    LoadItemTexture(itemSlot, itemSpritePath);
-                }
+                string stagedItemSpritePath = StageRuntimeAsset("item", data.Name, itemSpritePath);
+                bool itemSpriteExists = !string.IsNullOrEmpty(stagedItemSpritePath) && File.Exists(stagedItemSpritePath);
+                LogSpritePathResolution("item", itemSpritePath, stagedItemSpritePath, itemSpriteExists);
 
                 string projSpritePath = GetSpritePath(root, "projectile_sprite_path");
-                bool needsProjectile = NeedsProjectile(data, projSpritePath);
+                string stagedProjSpritePath = StageRuntimeAsset("projectile", data.Name, projSpritePath);
+                bool projSpriteExists = !string.IsNullOrEmpty(stagedProjSpritePath) && File.Exists(stagedProjSpritePath);
+                LogSpritePathResolution("projectile", projSpritePath, stagedProjSpritePath, projSpriteExists);
+
+                WriteLastInjectArtifacts(
+                    json,
+                    itemName,
+                    itemSpritePath,
+                    stagedItemSpritePath,
+                    itemSpriteExists,
+                    projSpritePath,
+                    stagedProjSpritePath,
+                    projSpriteExists);
+
+                if (itemSpriteExists)
+                {
+                    LoadItemTexture(itemSlot, stagedItemSpritePath);
+                }
+
+                bool needsProjectile = NeedsProjectile(data, stagedProjSpritePath);
 
                 int projSlot = -1;
                 if (needsProjectile && data.ShootProjectileTypeId < 0)
@@ -269,9 +293,9 @@ namespace ForgeConnector
                     ForgeManifestStore.RegisterProjectile(projSlot, projData);
                     ForgeLabTelemetry.RegisterProjectileContext(projSlot, telemetryContext);
 
-                    if (!string.IsNullOrEmpty(projSpritePath) && File.Exists(projSpritePath))
+                    if (projSpriteExists)
                     {
-                        LoadProjectileTexture(projSlot, projSpritePath);
+                        LoadProjectileTexture(projSlot, stagedProjSpritePath);
                     }
                 }
 
@@ -928,6 +952,9 @@ namespace ForgeConnector
             _heartbeatPath = Path.Combine(_modSourcesDir, "forge_connector_alive.json");
             _statusPath = Path.Combine(_modSourcesDir, "forge_connector_status.json");
             _runtimeSummaryPath = Path.Combine(_modSourcesDir, "forge_runtime_summary.json");
+            _lastInjectPath = Path.Combine(_modSourcesDir, "forge_last_inject.json");
+            _lastInjectDebugPath = Path.Combine(_modSourcesDir, "forge_last_inject_debug.json");
+            _runtimeAssetDir = Path.Combine(_modSourcesDir, "ForgeConnectorInjectedAssets");
             WriteHeartbeat();
             WriteRuntimeSummary(force: true);
             StartWatcher();
@@ -1122,6 +1149,108 @@ namespace ForgeConnector
             {
                 Mod.Logger.Error("[ForgeConnector] TryWriteHiddenLabResult failed: " + ex.Message);
             }
+        }
+
+        private string StageRuntimeAsset(string kind, string itemName, string sourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                return string.Empty;
+
+            try
+            {
+                if (!File.Exists(sourcePath))
+                    return string.Empty;
+
+                Directory.CreateDirectory(_runtimeAssetDir);
+
+                string safeItemName = SanitizeFileStem(itemName);
+                string extension = Path.GetExtension(sourcePath);
+                if (string.IsNullOrWhiteSpace(extension))
+                    extension = ".png";
+
+                string stagedPath = Path.Combine(_runtimeAssetDir, $"{safeItemName}_{kind}{extension}");
+                string sourceFullPath = Path.GetFullPath(sourcePath);
+                string stagedFullPath = Path.GetFullPath(stagedPath);
+
+                if (!string.Equals(sourceFullPath, stagedFullPath, StringComparison.Ordinal))
+                    File.Copy(sourceFullPath, stagedFullPath, overwrite: true);
+
+                return stagedFullPath;
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error($"[ForgeConnector] StageRuntimeAsset failed for {kind} sprite '{sourcePath}': {ex.Message}");
+                return sourcePath;
+            }
+        }
+
+        private void LogSpritePathResolution(string kind, string rawPath, string stagedPath, bool exists)
+        {
+            bool rawExists = !string.IsNullOrWhiteSpace(rawPath) && File.Exists(rawPath);
+            Mod.Logger.Info(
+                $"[ForgeConnector] {kind} sprite raw='{rawPath}' rawExists={rawExists} staged='{stagedPath}' stagedExists={exists}");
+        }
+
+        private void WriteLastInjectArtifacts(
+            string rawJson,
+            string itemName,
+            string rawItemSpritePath,
+            string stagedItemSpritePath,
+            bool itemSpriteExists,
+            string rawProjectileSpritePath,
+            string stagedProjectileSpritePath,
+            bool projectileSpriteExists)
+        {
+            try
+            {
+                Directory.CreateDirectory(_modSourcesDir);
+
+                if (!string.IsNullOrWhiteSpace(_lastInjectPath))
+                    File.WriteAllText(_lastInjectPath, rawJson);
+
+                if (string.IsNullOrWhiteSpace(_lastInjectDebugPath))
+                    return;
+
+                string debugJson = JsonSerializer.Serialize(new
+                {
+                    item_name = itemName,
+                    timestamp = DateTime.UtcNow.ToString("o"),
+                    item_sprite = new
+                    {
+                        raw_path = rawItemSpritePath,
+                        staged_path = stagedItemSpritePath,
+                        exists = itemSpriteExists,
+                    },
+                    projectile_sprite = new
+                    {
+                        raw_path = rawProjectileSpritePath,
+                        staged_path = stagedProjectileSpritePath,
+                        exists = projectileSpriteExists,
+                    },
+                }, new JsonSerializerOptions { WriteIndented = true });
+
+                File.WriteAllText(_lastInjectDebugPath, debugJson);
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] WriteLastInjectArtifacts failed: " + ex.Message);
+            }
+        }
+
+        private static string SanitizeFileStem(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "InjectedAsset";
+
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+            char[] chars = value.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (Array.IndexOf(invalidChars, chars[i]) >= 0 || char.IsWhiteSpace(chars[i]))
+                    chars[i] = '_';
+            }
+
+            return new string(chars);
         }
 
         // ------------------------------------------------------------------

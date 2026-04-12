@@ -783,6 +783,19 @@ class ArtistAgent:
 
         return candidates[best_idx]
 
+    @staticmethod
+    def _require_readable_sprite(image: Image.Image, *, sprite_kind: str) -> None:
+        gate_report = evaluate_sprite_gates(image, sprite_kind=sprite_kind)
+        if gate_report.passed:
+            return
+
+        failed_checks = ", ".join(
+            sorted(name for name, check in gate_report.checks.items() if not check.passed)
+        )
+        raise RuntimeError(
+            f"{sprite_kind} sprite failed deterministic sprite gates: {failed_checks}"
+        )
+
     def _generate_standard_item(self, parsed: PixelsmithInput) -> Path:
         generation_mode, reference_url, endpoint = self._resolve_generation_mode(
             generation_mode=parsed.generation_mode,
@@ -819,6 +832,7 @@ class ArtistAgent:
         processed = remove_background(raw_image).convert("RGBA")
         target = tuple(parsed.visuals.icon_size)
         processed = downscale(processed, target)
+        self._require_readable_sprite(processed, sprite_kind="item")
 
         out_path = self.output_dir / f"{parsed.item_name}.png"
         processed.save(out_path)
@@ -900,6 +914,7 @@ class ArtistAgent:
         processed = remove_background(raw_image).convert("RGBA")
         target = tuple(proj.icon_size)
         processed = downscale(processed, target)
+        self._require_readable_sprite(processed, sprite_kind="projectile")
 
         out_path = self.output_dir / f"{proj_name}.png"
         processed.save(out_path)
