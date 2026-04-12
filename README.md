@@ -1,68 +1,89 @@
 # The Forge
 
-Agentic Terraria item generator. Describe an item, then The Forge designs it, writes the mod code, generates sprite art, and stages or injects it from the terminal UI.
+Terraria item workshop for tModLoader.
 
-
-
-
-
+Describe an item, and The Forge can design it, generate art, build the mod output, or inject it live into a running tModLoader session. The current UI is a workshop surface, not an IDE: one item on the bench, optional variants on the shelf, and fast reinject loops for live tuning.
 
 ![Go](https://img.shields.io/badge/TUI-Go%20%2F%20BubbleTea-00ADD8)
 ![Python](https://img.shields.io/badge/Pipeline-Python-3776AB)
 ![tModLoader](https://img.shields.io/badge/Target-tModLoader%201.4.4-green)
 
-## How It Works
+## What It Does
 
-1. Enter an item prompt.
-2. `Architect` creates the manifest.
-3. `Forge Master` generates C# mod code.
-4. `Pixelsmith` generates item and projectile art.
-5. `Gatekeeper` builds and stages the mod.
-6. `ForgeConnector` can inject it into a running tModLoader session.
+- Prompt-to-item generation through `Architect`, `Pixelsmith`, `Forge Master`, and `Gatekeeper`
+- Instant live injection through `ForgeConnector`
+- Bench/shelf workshop loop in the TUI
+- Direct reinject and restore flows for runtime tuning
+- Bounded hidden-audition and runtime-validation path for supported package/runtime slices
+
+## Current Product Shape
+
+The repo has three active flows:
+
+1. **Normal compile path**
+   - generate manifest, art, C# mod output, and staged build artifacts
+2. **Instant inject path**
+   - generate manifest + art and inject directly without a packaged build
+3. **Workshop / Forge Director path**
+   - keep one active item on the bench
+   - generate shelf variants from natural-language direction
+   - bench a variant and reinject it live
+
+## Architecture Docs
+
+The canonical architecture entrypoint is:
+
+- [docs/architecture/00-index.md](docs/architecture/00-index.md)
+
+Read these first if you are trying to understand or modify the system:
+
+- [docs/architecture/01-architecture.md](docs/architecture/01-architecture.md)
+- [docs/architecture/02-current-state.md](docs/architecture/02-current-state.md)
+- [docs/architecture/03-storm-brand-live-bug.md](docs/architecture/03-storm-brand-live-bug.md)
 
 ## Prerequisites
 
-- **Terraria** with **tModLoader** installed via Steam
-- **Go 1.24+**
-- **Python 3.12+**
-- **Node.js 18+**
-- **Playwright** (for reference image search)
+- Terraria with tModLoader installed
+- Go `1.24+`
+- Python `3.12+`
+- Node `18+`
+- Playwright runtime for Architect reference lookup
 
 ## Setup
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/mikop22/the-forge.git
+git clone https://github.com/Mikop22/the-forge.git
 cd the-forge
 ```
 
-### 2. API Keys
+### 2. API keys
 
 Create `agents/.env`:
 
 ```env
 OPENAI_API_KEY=your-openai-key
 FAL_KEY=your-fal-key
-FAL_IMAGE_TO_IMAGE_ENABLED=true # This controls if the app will look for reference images of real objects
+FAL_IMAGE_TO_IMAGE_ENABLED=true
 ```
 
 | Key | Use |
 |-----|-----|
-| `OPENAI_API_KEY` | Architect, Forge Master, reference approval |
-| `FAL_KEY` | Pixelsmith generation |
+| `OPENAI_API_KEY` | Architect, Forge Master, orchestration |
+| `FAL_KEY` | Pixelsmith image generation |
+| `FAL_IMAGE_TO_IMAGE_ENABLED` | optional reference-aware art path |
 
-### 3. Model weights
+### 3. Pixelsmith weights
 
 Download the sprite model weights into `agents/pixelsmith/`:
 
 ```bash
 cd agents/pixelsmith
-# Edit download_weights.py and add your Google Drive file IDs, then:
 python download_weights.py
 ```
 
-See `agents/README.md` for the file IDs workflow.
+See `agents/README.md` for the expected weights workflow.
 
 ### 4. Python environment
 
@@ -75,7 +96,7 @@ pip install fal-client playwright scikit-learn
 playwright install chromium
 ```
 
-### 5. Node dependencies
+### 5. Node dependency
 
 ```bash
 cd agents/pixelsmith
@@ -89,21 +110,20 @@ cd BubbleTeaTerminal
 go mod download
 ```
 
-### 7. ForgeConnector bridge mod
+### 7. Install `ForgeConnector`
 
-This tModLoader mod enables live injection.
+`ForgeConnector` is the tModLoader bridge mod that enables live injection and runtime status.
 
-1. Copy the `mod/ForgeConnector/` folder into your tModLoader ModSources directory:
-   - **macOS:** `~/Library/Application Support/Terraria/tModLoader/ModSources/`
-   - **Windows:** `Documents/My Games/Terraria/tModLoader/ModSources/`
-   - **Linux:** `~/.local/share/Terraria/tModLoader/ModSources/`
-
-2. Build `ForgeConnector` from Terraria's mod tools.
-3. Enable it in the mod list.
+1. Copy `mod/ForgeConnector/` into your tModLoader `ModSources` directory:
+   - macOS: `~/Library/Application Support/Terraria/tModLoader/ModSources/`
+   - Windows: `Documents/My Games/Terraria/tModLoader/ModSources/`
+   - Linux: `~/.local/share/Terraria/tModLoader/ModSources/`
+2. Build `ForgeConnector` from tModLoader's mod tools
+3. Enable it in the mod list
 
 ## Running The Forge
 
-From the `BubbleTeaTerminal/` directory:
+From `BubbleTeaTerminal/`:
 
 ```bash
 go run .
@@ -111,53 +131,109 @@ go run .
 
 The TUI auto-starts the Python orchestrator.
 
-### ModSources resolution
+## ModSources Resolution
 
-All components resolve `ModSources` in this order:
+All components resolve tModLoader `ModSources` in this order:
 
 1. `FORGE_MOD_SOURCES_DIR`
 2. `~/.config/theforge/config.toml` `mod_sources_dir`
 3. OS default path
 
-Only one orchestrator may run per `ModSources` tree. The lock file is `ModSources/.forge_orchestrator.lock`.
+Only one orchestrator may run per `ModSources` tree. The lock file is:
 
-### Using the TUI
+```text
+ModSources/.forge_orchestrator.lock
+```
 
-1. Enter an item prompt.
-2. Choose `Auto` or walk the manual wizard.
-3. Watch the forge/build stages.
-4. On the staging screen, review the item and press `Enter` to inject or `C` to craft again.
+## Using The TUI
 
-### Power Tiers
+### Basic forge flow
+
+1. Enter an item prompt
+2. Choose `Auto` or use the manual wizard
+3. Let the forge/build pipeline run
+4. Review the result on the staging/workshop screen
+5. Inject the item into a live tModLoader session
+
+### Workshop flow
+
+On the staging screen:
+
+- `Enter` or `A`: inject the current bench item
+- `/` or `Tab`: open the director command bar
+- `C`: start another item
+- `R`: reprompt art
+- `S`: tweak stats
+
+The workshop command bar supports the current V1 commands:
+
+- `/variants <direction>`
+- `/bench <variant-id-or-number>`
+- `/try`
+- `/restore baseline`
+- `/restore live`
+
+If you type plain natural language into the command bar instead of a slash command, it is treated as a variant-generation direction.
+
+## Runtime Files
+
+The most important live files under `ModSources` are:
+
+- `generation_status.json`
+- `workshop_request.json`
+- `workshop_status.json`
+- `forge_inject.json`
+- `forge_connector_status.json`
+- `forge_runtime_summary.json`
+- `forge_connector_alive.json`
+
+When debugging direct inject, these are also useful:
+
+- `forge_last_inject.json`
+- `forge_last_inject_debug.json`
+- `ForgeConnectorInjectedAssets/`
+
+## Power Tiers
 
 | Tier | Damage | Examples |
 |------|--------|----------|
-| Starter | 8–15 | Early-game, wood and iron |
-| Dungeon | 25–40 | Post-Skeletron |
-| Hardmode | 45–65 | Post-Wall of Flesh |
-| Endgame | 150–300 | Post-Moon Lord |
+| Starter | 8–15 | early-game, wood and iron |
+| Dungeon | 25–40 | post-Skeletron |
+| Hardmode | 45–65 | post-Wall of Flesh |
+| Endgame | 150–300 | post-Moon Lord |
 
 ## Project Structure
 
-```
+```text
 the-forge/
-├── BubbleTeaTerminal/     # Go TUI (BubbleTea)
-│   ├── main.go            # Full TUI + orchestrator launcher
-│   └── styles.go          # UI styling
-├── agents/                # Python AI pipeline
-│   ├── orchestrator.py    # Daemon — watches for requests, runs the pipeline
-│   ├── architect/         # Designs item manifests (stats, visuals, mechanics)
-│   ├── forge_master/      # Generates C# tModLoader code
-│   ├── pixelsmith/        # Generates pixel art sprites
-│   └── gatekeeper/        # Compiles and stages the mod
-└── mod/
-    └── ForgeConnector/    # tModLoader bridge mod for live injection
+├── BubbleTeaTerminal/
+│   ├── main.go
+│   ├── screen_forge.go
+│   ├── screen_staging.go
+│   └── internal/
+│       ├── ipc/
+│       └── modsources/
+├── agents/
+│   ├── orchestrator.py
+│   ├── contracts/
+│   ├── core/
+│   ├── architect/
+│   ├── pixelsmith/
+│   ├── forge_master/
+│   └── gatekeeper/
+├── mod/
+│   └── ForgeConnector/
+└── docs/
+    ├── architecture/
+    └── plans/
 ```
 
-## Supported Weapon Types
+## Boundaries
 
-Includes swords, bows, guns, staves, spears, summon weapons, launchers, and related variants. Prompts that imply projectile behavior can generate a custom `ModProjectile` and sprite.
+- The TUI is a workshop client, not a general coding environment
+- Runtime validation is intentionally bounded; do not assume every package/runtime combination is live-valid
+- `ForgeConnector` is a constrained live-runtime bridge, not an arbitrary generated-runtime host
 
 ## Reference-Aware Generation
 
-When the prompt references a known character or item, the pipeline can fetch reference images and use them to guide sprite generation.
+When a prompt references a known object, weapon, or character, the pipeline can fetch references and use them to guide sprite generation.
