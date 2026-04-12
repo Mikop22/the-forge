@@ -1,4 +1,4 @@
-# Storm Brand Live Incident
+# This is are some things to remember from a tricky bug
 
 ## Status
 Resolved on `main`.
