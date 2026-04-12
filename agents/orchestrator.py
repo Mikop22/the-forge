@@ -27,11 +27,30 @@ from pydantic import ValidationError
 load_dotenv(Path(__file__).parent / ".env")
 
 from contracts.ipc import UserRequest
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+
+try:
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+except ModuleNotFoundError:
+
+    class FileSystemEventHandler:  # type: ignore[no-redef]
+        pass
+
+    Observer = None
 
 from core.atomic_io import atomic_write_text as _atomic_write_text
 from core.paths import mod_sources_root
+from core.runtime_contracts import (
+    HiddenLabRequest,
+    build_hidden_lab_request,
+    evaluate_behavior_contract,
+    load_hidden_lab_request,
+    load_hidden_lab_result,
+    runtime_result_has_terminal_evidence,
+)
+from core.recovery_mode import fingerprint_thesis, next_recovery_mode
+from core.weapon_lab_archive import RuntimeGateRecord, WeaponLabArchive
+from core.weapon_lab_models import SearchBudget
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -53,6 +72,9 @@ REQUEST_FILE = _MOD_SOURCES / "user_request.json"
 STATUS_FILE = _MOD_SOURCES / "generation_status.json"
 HEARTBEAT_FILE = _MOD_SOURCES / "orchestrator_alive.json"
 ORCHESTRATOR_LOCK_FILE = _MOD_SOURCES / ".forge_orchestrator.lock"
+HIDDEN_LAB_REQUEST_FILE = _MOD_SOURCES / "forge_lab_hidden_request.json"
+HIDDEN_LAB_RESULT_FILE = _MOD_SOURCES / "forge_lab_hidden_result.json"
+HIDDEN_LAB_RUNTIME_TIMEOUT_S = 90.0
 
 # Where Pixelsmith drops sprites and Forge Master drops code
 _AGENTS_ROOT = Path(__file__).resolve().parent
@@ -61,6 +83,7 @@ OUTPUT_DIR = _AGENTS_ROOT / "output"
 # ---------------------------------------------------------------------------
 # Status helpers (TUI handshake)
 # ---------------------------------------------------------------------------
+
 
 def _write_status(payload: dict) -> None:
     """Atomically write *payload* to ``generation_status.json``.
@@ -74,16 +97,30 @@ def _write_status(payload: dict) -> None:
     log.info("Status → %s", payload.get("status"))
 
 
+def _validation_error_message(exc: ValidationError) -> str:
+    first_error = exc.errors()[0] if exc.errors() else None
+    if first_error is None:
+        return str(exc)
+    message = str(first_error.get("msg") or str(exc))
+    prefix = "Value error, "
+    if message.startswith(prefix):
+        return message[len(prefix) :]
+    return message
+
+
 def _write_heartbeat() -> None:
-    body = json.dumps(
-        {
-            "status": "listening",
-            "pid": os.getpid(),
-            "timestamp": time.time(),
-            "mod_sources_root": str(_MOD_SOURCES.resolve()),
-        },
-        indent=2,
-    ) + "\n"
+    body = (
+        json.dumps(
+            {
+                "status": "listening",
+                "pid": os.getpid(),
+                "timestamp": time.time(),
+                "mod_sources_root": str(_MOD_SOURCES.resolve()),
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     _atomic_write_text(HEARTBEAT_FILE, body)
 
 
@@ -108,7 +145,9 @@ def _pid_alive(pid: int) -> bool:
         import ctypes
 
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
         if handle:
             ctypes.windll.kernel32.CloseHandle(handle)
             return True
@@ -143,11 +182,15 @@ def _acquire_single_instance_lock() -> None:
             pass
 
     try:
-        fd = os.open(ORCHESTRATOR_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        fd = os.open(
+            ORCHESTRATOR_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(f"{pid}\n")
     except FileExistsError:
-        log.error("Lock race on %s — retry or remove stale lock.", ORCHESTRATOR_LOCK_FILE)
+        log.error(
+            "Lock race on %s — retry or remove stale lock.", ORCHESTRATOR_LOCK_FILE
+        )
         sys.exit(1)
 
 
@@ -155,31 +198,43 @@ def _set_stage(label: str, pct: int) -> None:
     _write_status({"status": "building", "stage_label": label, "stage_pct": pct})
 
 
-def _set_ready(item_name: str, manifest: dict | None = None, sprite_path: str = "",
-               projectile_sprite_path: str = "", inject_mode: bool = False) -> None:
-    _write_status({
-        "status": "ready",
-        "stage_pct": 100,
-        "batch_list": [item_name],
-        "message": "Ready for injection." if inject_mode else "Compilation successful. Waiting for user...",
-        "manifest": manifest or {},
-        "sprite_path": sprite_path,
-        "projectile_sprite_path": projectile_sprite_path,
-        "inject_mode": inject_mode,
-    })
+def _set_ready(
+    item_name: str,
+    manifest: dict | None = None,
+    sprite_path: str = "",
+    projectile_sprite_path: str = "",
+    inject_mode: bool = False,
+) -> None:
+    _write_status(
+        {
+            "status": "ready",
+            "stage_pct": 100,
+            "batch_list": [item_name],
+            "message": "Ready for injection."
+            if inject_mode
+            else "Compilation successful. Waiting for user...",
+            "manifest": manifest or {},
+            "sprite_path": sprite_path,
+            "projectile_sprite_path": projectile_sprite_path,
+            "inject_mode": inject_mode,
+        }
+    )
 
 
 def _set_error(message: str) -> None:
-    _write_status({
-        "status": "error",
-        "error_code": "PIPELINE_FAIL",
-        "message": f"The pipeline collapsed: {message}",
-    })
+    _write_status(
+        {
+            "status": "error",
+            "error_code": "PIPELINE_FAIL",
+            "message": f"The pipeline collapsed: {message}",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Agent imports (deferred so the module loads even if agents aren't installed)
 # ---------------------------------------------------------------------------
+
 
 def _import_agents():
     """Lazily import the three specialist agents and the Gatekeeper Integrator."""
@@ -208,12 +263,51 @@ def _import_instant_agents():
 # Pipeline
 # ---------------------------------------------------------------------------
 
+
 def _request_content_type(request: dict[str, Any]) -> str:
     return str(request.get("content_type") or "Weapon")
 
 
 def _request_sub_type(request: dict[str, Any]) -> str:
     return str(request.get("sub_type") or "Sword")
+
+
+def _request_uses_hidden_audition(request: dict[str, Any]) -> bool:
+    return bool(request.get("hidden_audition"))
+
+
+def _build_hidden_audition_finalists(
+    *,
+    architect: Any,
+    prompt: str,
+    tier: str,
+    content_type: str,
+    sub_type: str,
+    crafting_station: str | None,
+    thesis_count: int,
+    finalist_count: int,
+) -> list[dict[str, Any]]:
+    """Expand architect thesis finalists into manifest finalists for judging."""
+
+    finalist_bundle = architect.generate_thesis_finalists(
+        prompt=prompt,
+        thesis_count=thesis_count,
+        finalist_count=finalist_count,
+        selected_tier=tier,
+        content_type=content_type,
+        sub_type=sub_type,
+    )
+    return [
+        architect.expand_thesis_finalist_to_manifest(
+            finalist=finalist,
+            prompt=prompt,
+            tier=tier,
+            content_type=content_type,
+            sub_type=sub_type,
+            crafting_station=crafting_station,
+        )
+        for finalist in finalist_bundle.finalists
+    ]
 
 
 def _prepare_preview_manifest(request: dict[str, Any]) -> dict[str, Any] | None:
@@ -232,6 +326,366 @@ def _prepare_preview_manifest(request: dict[str, Any]) -> dict[str, Any] | None:
         )
         manifest["visuals"] = visuals
     return manifest
+
+
+def build_hidden_batch_recovery_plan(
+    *,
+    candidate_archive: WeaponLabArchive | dict[str, Any],
+    failed_batches: int,
+    quality_threshold: float,
+    search_budget: SearchBudget | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan the next reroll for a failed hidden batch without lowering the bar."""
+
+    from architect.thesis_generator import (
+        ThesisFinalist,
+        build_recovery_thesis_policies,
+    )
+
+    archive = WeaponLabArchive.model_validate(candidate_archive)
+    explicit_search_budget = (
+        SearchBudget.model_validate(search_budget)
+        if search_budget is not None
+        else None
+    )
+    recovery_mode = next_recovery_mode(
+        failed_batches=failed_batches,
+        base_budget=explicit_search_budget,
+        quality_threshold=quality_threshold,
+    )
+    if explicit_search_budget is not None:
+        recovery_mode = recovery_mode.model_copy(
+            update={"search_budget": explicit_search_budget}
+        )
+
+    scored_finalists = _score_hidden_batch_finalists(archive)
+    deduped_by_fingerprint: dict[str, tuple[int, str, float]] = {}
+    for candidate_id, score in scored_finalists:
+        thesis = archive.theses.get(candidate_id)
+        if thesis is None:
+            continue
+        fingerprint = fingerprint_thesis(thesis)
+        current = deduped_by_fingerprint.get(fingerprint)
+        if current is None or score > current[2]:
+            deduped_by_fingerprint[fingerprint] = (
+                archive.finalists.index(candidate_id),
+                candidate_id,
+                score,
+            )
+
+    deduped_finalists = [
+        (candidate_id, score)
+        for _, candidate_id, score in sorted(
+            deduped_by_fingerprint.values(), key=lambda item: item[0]
+        )
+    ]
+
+    near_miss_floor = quality_threshold - 1.0
+    best_score = max((score for _, score in deduped_finalists), default=0.0)
+    discard_batch = best_score < near_miss_floor
+
+    near_misses = [
+        ThesisFinalist(
+            candidate_id=candidate_id,
+            thesis=archive.theses[candidate_id],
+            total_score=score,
+        )
+        for candidate_id, score in deduped_finalists
+        if score >= near_miss_floor
+    ]
+
+    recovery_candidates = []
+    ancestry = dict(archive.reroll_ancestry)
+    if not discard_batch:
+        recovery_candidates = build_recovery_thesis_policies(
+            finalists=near_misses,
+            recovery_mode=recovery_mode,
+        )
+        ancestry.update(
+            {
+                candidate.candidate_id: list(candidate.source_candidate_ids)
+                for candidate in recovery_candidates
+            }
+        )
+
+    updated_archive = archive.model_copy(update={"reroll_ancestry": ancestry})
+    return {
+        "discard_batch": discard_batch,
+        "recovery_mode": recovery_mode,
+        "search_budget": recovery_mode.search_budget.model_dump(),
+        "deduped_candidate_ids": [
+            candidate_id for candidate_id, _ in deduped_finalists
+        ],
+        "recovery_candidates": [
+            candidate.model_dump(mode="python") for candidate in recovery_candidates
+        ],
+        "candidate_archive": updated_archive,
+    }
+
+
+def _score_hidden_batch_finalists(archive: WeaponLabArchive) -> list[tuple[str, float]]:
+    scored: list[tuple[str, float]] = []
+    for candidate_id in archive.finalists:
+        judge_scores = archive.judge_scores.get(candidate_id, [])
+        if not judge_scores:
+            scored.append((candidate_id, 0.0))
+            continue
+        total = sum(score.score for score in judge_scores)
+        scored.append((candidate_id, round(total / len(judge_scores), 2)))
+    return scored
+
+
+def _hidden_audition_art_sort_key(art_finalist: Any) -> tuple[float, float, str, str]:
+    scores = art_finalist.winner_art_scores
+    return (
+        -float(scores.motif_strength),
+        -float(scores.family_coherence),
+        str(art_finalist.item_name).lower(),
+        str(art_finalist.finalist_id),
+    )
+
+
+def run_hidden_pixelsmith_audition(
+    *,
+    finalists: list[dict[str, Any]],
+    prompt: str,
+    output_dir: str | Path | None = None,
+    artist: Any | None = None,
+) -> dict[str, Any]:
+    """Run the hidden Pixelsmith art audition for thesis finalists."""
+    if artist is None:
+        _, ArtistAgent = _import_instant_agents()
+        artist = ArtistAgent(output_dir=str(output_dir or OUTPUT_DIR))
+    from core.cross_consistency import apply_hidden_audition_consistency_gate
+
+    art_audition = artist.generate_hidden_audition_finalists(
+        finalists=finalists,
+        prompt=prompt,
+    )
+    reviewed = apply_hidden_audition_consistency_gate(
+        prompt=prompt,
+        finalists=finalists,
+        art_audition=art_audition,
+    )
+    return reviewed.model_dump()
+
+
+async def run_hidden_lab_runtime_gate(
+    *,
+    finalist: HiddenLabRequest | dict[str, Any],
+    timeout_s: float = 15.0,
+    poll_interval_s: float = 0.1,
+) -> dict[str, Any]:
+    """Write a hidden lab request and wait for runtime evidence."""
+    request = (
+        finalist
+        if isinstance(finalist, HiddenLabRequest)
+        else build_hidden_lab_request(finalist=finalist)
+    )
+
+    try:
+        HIDDEN_LAB_RESULT_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+    _atomic_write_text(
+        HIDDEN_LAB_REQUEST_FILE,
+        json.dumps(request.model_dump(mode="json"), indent=2) + "\n",
+    )
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if HIDDEN_LAB_RESULT_FILE.exists():
+            payload = json.loads(HIDDEN_LAB_RESULT_FILE.read_text(encoding="utf-8"))
+            result = load_hidden_lab_result(payload)
+            if (
+                result.candidate_id == request.candidate_id
+                and result.run_id == request.run_id
+            ):
+                if not runtime_result_has_terminal_evidence(result):
+                    await asyncio.sleep(poll_interval_s)
+                    continue
+                evaluation = evaluate_behavior_contract(
+                    request.behavior_contract, result
+                )
+                return {
+                    "candidate_id": request.candidate_id,
+                    "passed_runtime_gate": evaluation.passed,
+                    "runtime_gate_reason": evaluation.fail_reason,
+                    "observed_hits_to_cashout": evaluation.observed_hits_to_cashout,
+                    "observed_time_to_cashout_ms": (
+                        evaluation.observed_time_to_cashout_ms
+                    ),
+                    "runtime_result": result.model_dump(mode="json"),
+                }
+        await asyncio.sleep(poll_interval_s)
+
+    raise TimeoutError(
+        f"Timed out waiting for runtime evidence for {request.candidate_id}"
+    )
+
+
+def _archive_hidden_audition_result(
+    *,
+    candidate_archive: WeaponLabArchive | dict[str, Any],
+    finalist_id: str,
+    runtime_result: dict[str, Any],
+    final_winner_rationale: str | None = None,
+) -> WeaponLabArchive:
+    """Record runtime gate evidence without exposing loser details to the TUI."""
+
+    archive = WeaponLabArchive.model_validate(candidate_archive)
+    candidate_id = str(runtime_result.get("candidate_id") or finalist_id)
+    passed = bool(runtime_result.get("passed_runtime_gate"))
+    reason = runtime_result.get("runtime_gate_reason")
+
+    runtime_gate_records = dict(archive.runtime_gate_records)
+    runtime_gate_records[candidate_id] = RuntimeGateRecord(
+        candidate_id=candidate_id,
+        passed=passed,
+        reason=str(reason) if reason else None,
+        observed_hits_to_cashout=runtime_result.get("observed_hits_to_cashout"),
+        observed_time_to_cashout_ms=runtime_result.get("observed_time_to_cashout_ms"),
+    )
+
+    rejection_reasons = dict(archive.rejection_reasons)
+    update: dict[str, Any] = {"runtime_gate_records": runtime_gate_records}
+    if passed:
+        update["winning_finalist_id"] = finalist_id
+        if final_winner_rationale:
+            update["final_winner_rationale"] = final_winner_rationale
+    else:
+        rejection_reasons[finalist_id] = str(reason or "failed runtime gate")
+        update["rejection_reasons"] = rejection_reasons
+
+    return archive.model_copy(update=update)
+
+
+async def run_hidden_audition_pipeline(
+    *,
+    finalists: list[dict[str, Any]],
+    prompt: str,
+    output_dir: str | Path | None = None,
+    artist: Any | None = None,
+) -> dict[str, Any]:
+    """Select one winner only after art review and runtime evidence both pass."""
+
+    from pixelsmith.models import PixelsmithReviewedHiddenAuditionOutput
+
+    reviewed = run_hidden_pixelsmith_audition(
+        finalists=finalists,
+        prompt=prompt,
+        output_dir=output_dir,
+        artist=artist,
+    )
+    audition = PixelsmithReviewedHiddenAuditionOutput.model_validate(reviewed)
+    if audition.status == "error":
+        error = audition.error
+        if error is not None:
+            raise RuntimeError(
+                f"Hidden Pixelsmith audition failed [{error.code}]: {error.message}"
+            )
+        raise RuntimeError("Hidden Pixelsmith audition failed")
+
+    finalists_by_id = {
+        str(finalist.get("candidate_id") or finalist.get("item_name") or ""): finalist
+        for finalist in finalists
+    }
+    finalists_by_name = {
+        str(finalist.get("item_name") or ""): finalist for finalist in finalists
+    }
+
+    candidate_archive = audition.candidate_archive
+    runtime_passing_finalists: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
+    for art_finalist in audition.art_scored_finalists:
+        finalist = finalists_by_id.get(
+            art_finalist.finalist_id
+        ) or finalists_by_name.get(art_finalist.item_name)
+        if finalist is None:
+            raise RuntimeError(
+                "Unable to map art finalist "
+                f"{art_finalist.finalist_id!r}/{art_finalist.item_name!r} "
+                "back to a manifest finalist"
+            )
+
+        try:
+            runtime_request = build_hidden_lab_request(
+                finalist=finalist,
+                candidate_id=art_finalist.finalist_id,
+                sprite_path=art_finalist.item_sprite_path,
+                projectile_sprite_path=art_finalist.projectile_sprite_path,
+            )
+        except ValidationError as exc:
+            candidate_archive = candidate_archive.model_copy(
+                update={
+                    "rejection_reasons": {
+                        **candidate_archive.rejection_reasons,
+                        art_finalist.finalist_id: _validation_error_message(exc),
+                    }
+                }
+            )
+            continue
+
+        runtime_payload = runtime_request.model_dump(mode="json")
+
+        try:
+            runtime_result = await run_hidden_lab_runtime_gate(
+                finalist=runtime_payload,
+                timeout_s=HIDDEN_LAB_RUNTIME_TIMEOUT_S,
+            )
+        except TimeoutError:
+            candidate_archive = candidate_archive.model_copy(
+                update={
+                    "rejection_reasons": {
+                        **candidate_archive.rejection_reasons,
+                        art_finalist.finalist_id: "runtime gate timeout",
+                    }
+                }
+            )
+            continue
+        if runtime_result.get("passed_runtime_gate"):
+            runtime_passing_finalists.append(
+                (art_finalist, runtime_payload, runtime_result)
+            )
+            candidate_archive = _archive_hidden_audition_result(
+                candidate_archive=candidate_archive,
+                finalist_id=art_finalist.finalist_id,
+                runtime_result=runtime_result,
+            )
+            continue
+
+        candidate_archive = _archive_hidden_audition_result(
+            candidate_archive=candidate_archive,
+            finalist_id=art_finalist.finalist_id,
+            runtime_result=runtime_result,
+        )
+
+    if runtime_passing_finalists:
+        winning_art_finalist, runtime_payload, _ = min(
+            runtime_passing_finalists,
+            key=lambda entry: _hidden_audition_art_sort_key(entry[0]),
+        )
+        winner = {
+            "candidate_id": winning_art_finalist.finalist_id,
+            "item_name": winning_art_finalist.item_name,
+            "manifest": runtime_payload["manifest"],
+            "item_sprite_path": winning_art_finalist.item_sprite_path,
+            "projectile_sprite_path": str(
+                runtime_payload.get("projectile_sprite_path") or ""
+            ),
+        }
+        candidate_archive = candidate_archive.model_copy(
+            update={
+                "winning_finalist_id": winning_art_finalist.finalist_id,
+                "final_winner_rationale": (
+                    f"{winning_art_finalist.finalist_id} cleared art review and runtime evidence."
+                ),
+            }
+        )
+        return {"winner": winner, "candidate_archive": candidate_archive}
+
+    raise RuntimeError("No hidden audition finalist passed the runtime gate")
+
 
 async def run_pipeline(request: dict[str, Any]) -> None:
     """Execute the full Architect → (Coder ∥ Artist) → Integrator DAG."""
@@ -254,13 +708,41 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     log.info("▸ Architect — generating manifest for: %s", prompt[:80])
     _set_stage("Architect — Designing item...", 15)
     architect = ArchitectAgent()
-    manifest: dict = architect.generate_manifest(
-        prompt=prompt,
-        tier=tier,
-        content_type=content_type,
-        sub_type=sub_type,
-        crafting_station=crafting_station,
-    )
+    art_result: dict[str, Any] | None = None
+    if _request_uses_hidden_audition(request):
+        artist = ArtistAgent(output_dir=str(OUTPUT_DIR))
+        finalists = _build_hidden_audition_finalists(
+            architect=architect,
+            prompt=prompt,
+            tier=tier,
+            content_type=content_type,
+            sub_type=sub_type,
+            crafting_station=crafting_station,
+            thesis_count=int(request.get("thesis_count", 3)),
+            finalist_count=int(request.get("finalist_count", 2)),
+        )
+        hidden_result = await run_hidden_audition_pipeline(
+            finalists=finalists,
+            prompt=prompt,
+            output_dir=OUTPUT_DIR,
+            artist=artist,
+        )
+        manifest = dict(hidden_result["winner"]["manifest"])
+        art_result = {
+            "status": "success",
+            "item_sprite_path": hidden_result["winner"].get("item_sprite_path", ""),
+            "projectile_sprite_path": hidden_result["winner"].get(
+                "projectile_sprite_path", ""
+            ),
+        }
+    else:
+        manifest = architect.generate_manifest(
+            prompt=prompt,
+            tier=tier,
+            content_type=content_type,
+            sub_type=sub_type,
+            crafting_station=crafting_station,
+        )
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)
 
@@ -271,12 +753,13 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     loop = asyncio.get_running_loop()
 
     coder = CoderAgent()
-    artist = ArtistAgent(output_dir=str(OUTPUT_DIR))
-
-    coder_future = loop.run_in_executor(None, coder.write_code, manifest)
-    artist_future = loop.run_in_executor(None, artist.generate_asset, manifest)
-
-    code_result, art_result = await asyncio.gather(coder_future, artist_future)
+    if art_result is None:
+        artist = ArtistAgent(output_dir=str(OUTPUT_DIR))
+        coder_future = loop.run_in_executor(None, coder.write_code, manifest)
+        artist_future = loop.run_in_executor(None, artist.generate_asset, manifest)
+        code_result, art_result = await asyncio.gather(coder_future, artist_future)
+    else:
+        code_result = await loop.run_in_executor(None, coder.write_code, manifest)
 
     # Validate Coder output
     if code_result.get("status") != "success":
@@ -323,6 +806,7 @@ async def run_pipeline(request: dict[str, Any]) -> None:
 # Instant Inject Pipeline (Architect → Artist → forge_inject.json)
 # ---------------------------------------------------------------------------
 
+
 async def run_instant_pipeline(request: dict[str, Any]) -> None:
     """Execute the instant inject DAG: Architect → Artist only.
 
@@ -348,7 +832,10 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
     # --- Step B: Architect (sequential) --------------------------------
     if preview_manifest is not None:
         manifest = preview_manifest
-        log.info("▸ Reusing existing manifest for preview regeneration: %s", manifest.get("item_name", "unknown"))
+        log.info(
+            "▸ Reusing existing manifest for preview regeneration: %s",
+            manifest.get("item_name", "unknown"),
+        )
     else:
         log.info("▸ Architect — generating manifest for: %s", prompt[:80])
         _set_stage("Architect — Designing item...", 15)
@@ -473,7 +960,11 @@ class _RequestHandler(FileSystemEventHandler):
 # Main — run as a daemon
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
+    if Observer is None:
+        raise ModuleNotFoundError("watchdog is required to run the orchestrator daemon")
+
     log.info("The Forge Orchestrator starting up")
     log.info("ModSources: %s", _MOD_SOURCES.resolve())
     log.info("Watching: %s", REQUEST_FILE)

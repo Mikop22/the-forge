@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest import mock
@@ -31,9 +32,22 @@ def test_integrator_mod_root_uses_forge_mod_sources_plus_mod_name() -> None:
     from gatekeeper.gatekeeper import Integrator
 
     custom = Path("/opt/terraria/ModSources")
-    with mock.patch.dict(os.environ, {"FORGE_MOD_SOURCES_DIR": str(custom)}, clear=True):
+    with mock.patch.dict(
+        os.environ, {"FORGE_MOD_SOURCES_DIR": str(custom)}, clear=True
+    ):
         integ = Integrator(coder=None)
     assert integ._mod_root == custom / "ForgeGeneratedMod"
+
+
+def test_integrator_normalizes_standalone_mod_source_path_to_mod_sources_layout() -> (
+    None
+):
+    from gatekeeper.gatekeeper import Integrator
+
+    standalone = Path("/opt/terraria/CustomCombatPack")
+    with mock.patch.dict(os.environ, {"MOD_SOURCE_PATH": str(standalone)}, clear=True):
+        integ = Integrator(coder=None)
+    assert integ._mod_root == standalone.parent / "ModSources" / standalone.name
 
 
 def test_enabled_json_follows_mod_sources_parent() -> None:
@@ -51,10 +65,70 @@ def test_enabled_json_follows_mod_sources_parent() -> None:
 def test_integrator_root_status_mapping_finishing() -> None:
     from gatekeeper.gatekeeper import Integrator
 
-    got = Integrator._status_for_mod_sources_root({"status": "finishing", "message": "Almost done"})
+    got = Integrator._status_for_mod_sources_root(
+        {"status": "finishing", "message": "Almost done"}
+    )
     assert got["status"] == "building"
     assert got["stage_pct"] == 95
     assert "Almost done" in got["stage_label"]
+
+
+def test_write_status_mirrors_to_active_custom_mod_sources_root(tmp_path) -> None:
+    from gatekeeper.gatekeeper import Integrator
+
+    mod_sources_root = tmp_path / "custom-save" / "ModSources"
+    integ = Integrator.__new__(Integrator)
+    integ._mod_root = mod_sources_root / "CustomCombatPack"
+
+    integ._write_status({"status": "finishing", "message": "Almost done"})
+
+    mirrored = mod_sources_root / "generation_status.json"
+    assert mirrored.exists()
+    assert json.loads(mirrored.read_text()) == {
+        "status": "building",
+        "stage_label": "Almost done",
+        "stage_pct": 95,
+    }
+
+
+def test_ensure_mod_enabled_writes_under_active_custom_savedir(tmp_path) -> None:
+    from gatekeeper.gatekeeper import Integrator
+
+    savedir = tmp_path / "custom-save"
+    integ = Integrator.__new__(Integrator)
+    integ._mod_root = savedir / "ModSources" / "CustomCombatPack"
+
+    integ._ensure_mod_enabled("CustomCombatPack")
+
+    enabled = savedir / "Mods" / "enabled.json"
+    assert enabled.exists()
+    assert json.loads(enabled.read_text()) == ["CustomCombatPack"]
+
+
+def test_build_and_verify_enables_active_mod_folder_name_on_success() -> None:
+    from gatekeeper.gatekeeper import CompileResult, Integrator
+
+    integ = Integrator.__new__(Integrator)
+    integ._mod_root = Path("/tmp/CustomCombatPack")
+    integ._max_retries = 0
+    integ._coder = None
+
+    with mock.patch.object(
+        integ, "_run_tmod_build", return_value=CompileResult(True, "ok")
+    ):
+        with mock.patch.object(integ, "_stage_files"):
+            with mock.patch.object(integ, "_write_status"):
+                with mock.patch.object(integ, "_ensure_mod_enabled") as ensure_enabled:
+                    out = integ.build_and_verify(
+                        {
+                            "status": "success",
+                            "cs_code": "public class DemoSword : ModItem { }",
+                            "hjson_code": "",
+                        },
+                    )
+
+    assert out["status"] == "success"
+    ensure_enabled.assert_called_once_with("CustomCombatPack")
 
 
 def test_parse_errors_extracts_tml003_packaging_lock() -> None:
@@ -99,7 +173,9 @@ tModLoader: Mod Build error TML003: Please close tModLoader or disable the mod i
 """
     coder = mock.Mock()
     integ = Integrator(coder=coder)
-    with mock.patch.object(integ, "_run_tmod_build", return_value=CompileResult(False, tml_log)):
+    with mock.patch.object(
+        integ, "_run_tmod_build", return_value=CompileResult(False, tml_log)
+    ):
         with mock.patch.object(integ, "_stage_files"):
             with mock.patch.object(integ, "_write_status"):
                 out = integ.build_and_verify(
@@ -122,7 +198,9 @@ def test_cs_error_not_treated_as_packaging_only() -> None:
 
     errors = [
         RoslynError(code="CS0103", message="missing name", line=1, file="Item.cs"),
-        RoslynError(code="TML003", message="ignored for this check", line=None, file=None),
+        RoslynError(
+            code="TML003", message="ignored for this check", line=None, file=None
+        ),
     ]
     assert not Integrator._is_packaging_only_failure(errors)
 

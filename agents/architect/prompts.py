@@ -6,6 +6,7 @@ from architect.accessory_prompt import build_prompt as build_accessory_prompt
 from architect.consumable_prompt import build_prompt as build_consumable_prompt
 from architect.summon_prompt import build_prompt as build_summon_prompt
 from architect.tool_prompt import build_prompt as build_tool_prompt
+from architect.weapon_thesis_prompt import build_prompt as build_weapon_thesis_prompt
 from architect.weapon_prompt import build_prompt as build_weapon_prompt
 from architect.models import VALID_CONTENT_TYPES
 
@@ -16,6 +17,7 @@ DEFAULT_SUB_TYPES = {
     "Consumable": "Potion",
     "Tool": "Pickaxe",
 }
+
 
 def _normalize_content_type(content_type: str | None) -> str:
     content_type = str(content_type or "Weapon").strip()

@@ -1,0 +1,46 @@
+{
+  "phase1_packages": {
+    "storm_brand": {
+      "prompt": "Celestial staff that marks enemies before calling down a starfall finisher.",
+      "item_name": "StormBrand",
+      "display_name": "Storm Brand",
+      "tooltip": "Calls down marked thunder.",
+      "visual_description": "A star-forged staff crackling with stormlight.",
+      "fx_profile": "celestial_shock",
+      "payoff_rate": "fast",
+      "expects_projectile_visuals": true,
+      "expected_package_key": "storm_brand"
+    },
+    "orbit_furnace": {
+      "prompt": "Molten staff that seeds orbiting embers before a divebomb finisher.",
+      "item_name": "OrbitFurnace",
+      "display_name": "Orbit Furnace",
+      "tooltip": "Builds a furnace ring before the embers dive.",
+      "visual_description": "A furnace-core staff ringed by cinder glyphs.",
+      "fx_profile": "ember_forge",
+      "payoff_rate": "medium",
+      "expects_projectile_visuals": false,
+      "expected_package_key": "orbit_furnace"
+    },
+    "frost_shatter": {
+      "prompt": "Glacial staff that freezes enemies until the crystal fan bursts outward.",
+      "item_name": "FrostShatter",
+      "display_name": "Frost Shatter",
+      "tooltip": "Cold pressure builds until the ice bursts.",
+      "visual_description": "A glacial stave shedding crystalline frost.",
+      "fx_profile": "glacial_burst",
+      "payoff_rate": "medium",
+      "expects_projectile_visuals": false,
+      "expected_package_key": "frost_shatter"
+    }
+  },
+  "legacy_shot_style": {
+    "prompt": "Legacy staff that still uses sky-strike projectile behavior without a combat package.",
+    "item_name": "SkyLegacy",
+    "display_name": "Sky Legacy",
+    "tooltip": "Rain stars the old-fashioned way.",
+    "visual_description": "An heirloom staff traced with falling-star runes.",
+    "shot_style": "sky_strike",
+    "custom_projectile": false
+  }
+}

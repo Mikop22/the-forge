@@ -1556,6 +1556,134 @@ namespace ForgeGeneratedMod.Content.Items.Weapons
     }
 }"""
 
+STORM_BRAND_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    // Combat package: storm_brand. Direct seed bolts stack marks, then cash out in a burst.
+    public class ExampleStormBrandStaff : ModItem
+    {
+        public override void SetStaticDefaults()
+        {
+            Item.staff[Type] = true;
+        }
+
+        public override void SetDefaults()
+        {
+            Item.width = 42;
+            Item.height = 42;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 18;
+            Item.useAnimation = 18;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 24;
+            Item.knockBack = 3.5f;
+            Item.mana = 8;
+            Item.noMelee = true;
+            Item.shoot = ModContent.ProjectileType<ExampleStormBrandBolt>();
+            Item.shootSpeed = 9f;
+
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item43;
+        }
+    }
+
+    public class ExampleStormBrandBolt : ModProjectile
+    {
+        public override void SetDefaults()
+        {
+            Projectile.width = 16;
+            Projectile.height = 16;
+            Projectile.friendly = true;
+            Projectile.hostile = false;
+            Projectile.DamageType = DamageClass.Magic;
+            Projectile.penetrate = 1;
+            Projectile.timeLeft = 180;
+        }
+    }
+}"""
+
+ORBIT_FURNACE_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    // Combat package: orbit_furnace. Build ember satellites before the divebomb finisher.
+    public class ExampleOrbitFurnaceStaff : ModItem
+    {
+        public override void SetStaticDefaults()
+        {
+            Item.staff[Type] = true;
+        }
+
+        public override void SetDefaults()
+        {
+            Item.width = 40;
+            Item.height = 40;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 20;
+            Item.useAnimation = 20;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 22;
+            Item.knockBack = 4f;
+            Item.mana = 7;
+            Item.noMelee = true;
+            Item.shoot = ProjectileID.BallofFire;
+            Item.shootSpeed = 8f;
+
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item20;
+        }
+    }
+}"""
+
+FROST_SHATTER_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    // Combat package: frost_shatter. Chill targets until the crystal fan burst triggers.
+    public class ExampleFrostShatterStaff : ModItem
+    {
+        public override void SetStaticDefaults()
+        {
+            Item.staff[Type] = true;
+        }
+
+        public override void SetDefaults()
+        {
+            Item.width = 38;
+            Item.height = 38;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 22;
+            Item.useAnimation = 22;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 20;
+            Item.knockBack = 4.5f;
+            Item.mana = 6;
+            Item.noMelee = true;
+            Item.shoot = ProjectileID.IceSickle;
+            Item.shootSpeed = 8.5f;
+
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item28;
+        }
+    }
+}"""
+
 REFERENCE_SNIPPETS: dict[str, str] = {
     "Sword": SWORD_TEMPLATE,
     "Gun": GUN_TEMPLATE,
@@ -1577,21 +1705,35 @@ STYLE_TEMPLATES: dict[str, str] = {
     "channeled": CHANNELED_TEMPLATE,
 }
 
+PACKAGE_TEMPLATES: dict[str, str] = {
+    "storm_brand": STORM_BRAND_TEMPLATE,
+    "orbit_furnace": ORBIT_FURNACE_TEMPLATE,
+    "frost_shatter": FROST_SHATTER_TEMPLATE,
+}
 
-def get_reference_snippet(sub_type: str, custom_projectile: bool = False, shot_style: str = "direct") -> str:
+
+def get_reference_snippet(
+    sub_type: str,
+    custom_projectile: bool = False,
+    shot_style: str = "direct",
+    combat_package: str | None = None,
+) -> str:
     """Return the best-matching reference snippet for a given sub-type.
 
     Priority order:
-    1. shot_style — if a non-"direct" shot_style is set, its template wins
+    1. combat_package - package templates win when present.
+    2. shot_style — if a non-"direct" shot_style is set, its template wins
        (e.g. channeled, homing, sky_strike).
-    2. custom_projectile — only honoured when shot_style is "direct"; returns
-       the custom projectile template (ModItem + ModProjectile in one file).
-    3. sub_type fallback — e.g. Staff → STAFF_TEMPLATE, Sword → SWORD_TEMPLATE.
+    3. custom_projectile — only honoured when shot_style is "direct"; returns
+        the custom projectile template (ModItem + ModProjectile in one file).
+    4. sub_type fallback — e.g. Staff → STAFF_TEMPLATE, Sword → SWORD_TEMPLATE.
     """
+    package_tmpl = PACKAGE_TEMPLATES.get(combat_package or "")
+    if package_tmpl:
+        return package_tmpl
     style_tmpl = STYLE_TEMPLATES.get(shot_style)
     if style_tmpl:
         return style_tmpl
     if custom_projectile:
         return CUSTOM_PROJECTILE_TEMPLATE
     return REFERENCE_SNIPPETS.get(sub_type, SWORD_TEMPLATE)
-

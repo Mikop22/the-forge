@@ -113,6 +113,7 @@ def tmod_enabled_json_path() -> Path:
 @dataclass
 class CompileResult:
     """Result of a tModLoader build attempt."""
+
     success: bool
     output: str  # combined stdout + stderr
 
@@ -123,7 +124,10 @@ class Integrator:
     def __init__(self, coder=None) -> None:
         mod_source = os.environ.get("MOD_SOURCE_PATH")
         if mod_source:
-            self._mod_root = Path(mod_source).expanduser()
+            mod_root = Path(mod_source).expanduser()
+            if mod_root.parent.name != "ModSources":
+                mod_root = mod_root.parent / "ModSources" / mod_root.name
+            self._mod_root = mod_root
         else:
             self._mod_root = default_mod_sources_dir() / "ForgeGeneratedMod"
 
@@ -133,7 +137,12 @@ class Integrator:
         self._coder = coder
         self._max_retries = _MAX_RETRIES
 
-    def build_and_verify(self, forge_output: dict, sprite_path: str | None = None, projectile_sprite_path: str | None = None) -> dict:
+    def build_and_verify(
+        self,
+        forge_output: dict,
+        sprite_path: str | None = None,
+        projectile_sprite_path: str | None = None,
+    ) -> dict:
         """Main entry point. Stage files, build, self-heal, return result."""
         if forge_output.get("status") == "error":
             return GatekeeperResult(
@@ -156,17 +165,21 @@ class Integrator:
             ).model_dump()
 
         self._write_status({"status": "building"})
-        self._stage_files(cs_code, hjson_code, item_name, sprite_path, projectile_sprite_path)
+        self._stage_files(
+            cs_code, hjson_code, item_name, sprite_path, projectile_sprite_path
+        )
 
         for attempt in range(1, self._max_retries + 2):
             result = self._run_tmod_build()
 
             if result.success:
-                self._ensure_mod_enabled("ForgeGeneratedMod")
-                self._write_status({
-                    "status": "finishing",
-                    "message": "Compilation successful. Finalizing...",
-                })
+                self._ensure_mod_enabled(self._mod_root.name)
+                self._write_status(
+                    {
+                        "status": "finishing",
+                        "message": "Compilation successful. Finalizing...",
+                    }
+                )
                 return GatekeeperResult(
                     status="success",
                     item_name=item_name,
@@ -178,11 +191,13 @@ class Integrator:
             if self._is_packaging_only_failure(errors):
                 user_msg = self._packaging_failure_summary(errors)
                 code = self._first_tml_code(errors)
-                self._write_status({
-                    "status": "error",
-                    "error_code": code,
-                    "message": user_msg,
-                })
+                self._write_status(
+                    {
+                        "status": "error",
+                        "error_code": code,
+                        "message": user_msg,
+                    }
+                )
                 return GatekeeperResult(
                     status="error",
                     item_name=item_name,
@@ -193,11 +208,13 @@ class Integrator:
 
             if attempt > self._max_retries:
                 error_code = errors[0].code if errors else "UNKNOWN"
-                self._write_status({
-                    "status": "error",
-                    "error_code": error_code,
-                    "message": "Critical Failure: The compiler rejected the generated logic.",
-                })
+                self._write_status(
+                    {
+                        "status": "error",
+                        "error_code": error_code,
+                        "message": "Critical Failure: The compiler rejected the generated logic.",
+                    }
+                )
                 return GatekeeperResult(
                     status="error",
                     item_name=item_name,
@@ -220,11 +237,13 @@ class Integrator:
 
             if repair_result.get("status") == "error":
                 error_code = errors[0].code if errors else "UNKNOWN"
-                self._write_status({
-                    "status": "error",
-                    "error_code": error_code,
-                    "message": "Critical Failure: The compiler rejected the generated logic.",
-                })
+                self._write_status(
+                    {
+                        "status": "error",
+                        "error_code": error_code,
+                        "message": "Critical Failure: The compiler rejected the generated logic.",
+                    }
+                )
                 return GatekeeperResult(
                     status="error",
                     item_name=item_name,
@@ -234,7 +253,13 @@ class Integrator:
                 ).model_dump()
 
             cs_code = repair_result["cs_code"]
-            self._stage_files(cs_code, hjson_code, item_name, sprite_path=None, projectile_sprite_path=None)
+            self._stage_files(
+                cs_code,
+                hjson_code,
+                item_name,
+                sprite_path=None,
+                projectile_sprite_path=None,
+            )
 
         # Should be unreachable, but guard against falling through.
         return GatekeeperResult(
@@ -249,28 +274,34 @@ class Integrator:
         """Extract Roslyn CS#### errors and tModLoader TML### packaging errors from build output."""
         errors: list[RoslynError] = []
         for m in _ERROR_RE.finditer(output):
-            errors.append(RoslynError(
-                code=m.group("code"),
-                message=m.group("message"),
-                line=int(m.group("line")),
-                file=m.group("file"),
-            ))
+            errors.append(
+                RoslynError(
+                    code=m.group("code"),
+                    message=m.group("message"),
+                    line=int(m.group("line")),
+                    file=m.group("file"),
+                )
+            )
         for m in _TML_ERROR_RE.finditer(output):
-            errors.append(RoslynError(
-                code=m.group("code"),
-                message=m.group("message").strip(),
-                line=None,
-                file=None,
-            ))
+            errors.append(
+                RoslynError(
+                    code=m.group("code"),
+                    message=m.group("message").strip(),
+                    line=None,
+                    file=None,
+                )
+            )
         has_cs = any(e.code.startswith("CS") for e in errors)
         has_tml = any(e.code.startswith("TML") for e in errors)
         if not has_cs and not has_tml and _TMOD_FILE_LOCK_RE.search(output):
-            errors.append(RoslynError(
-                code="TML_LOCK",
-                message=_MSG_TML003,
-                line=None,
-                file=None,
-            ))
+            errors.append(
+                RoslynError(
+                    code="TML_LOCK",
+                    message=_MSG_TML003,
+                    line=None,
+                    file=None,
+                )
+            )
         return errors
 
     @staticmethod
@@ -348,7 +379,9 @@ class Integrator:
         _atomic_write_json(self._mod_root / "generation_status.json", status_dict)
 
         root_payload = self._status_for_mod_sources_root(status_dict)
-        _atomic_write_json(mod_sources_root() / "generation_status.json", root_payload)
+        _atomic_write_json(
+            self._mod_root.parent / "generation_status.json", root_payload
+        )
 
     def _stage_files(
         self,
@@ -368,7 +401,9 @@ class Integrator:
             shutil.copy2(sprite_path, items_dir / f"{item_name}.png")
 
         if projectile_sprite_path and Path(projectile_sprite_path).exists():
-            shutil.copy2(projectile_sprite_path, items_dir / Path(projectile_sprite_path).name)
+            shutil.copy2(
+                projectile_sprite_path, items_dir / Path(projectile_sprite_path).name
+            )
 
         if hjson_code:
             self._merge_hjson(hjson_code, item_name)
@@ -391,7 +426,9 @@ class Integrator:
         entry = self._mod_root / f"{mod_name}.cs"
         if entry.exists():
             return
-        entry.write_text(_DEFAULT_MOD_ENTRY_CS.format(mod_name=mod_name), encoding="utf-8")
+        entry.write_text(
+            _DEFAULT_MOD_ENTRY_CS.format(mod_name=mod_name), encoding="utf-8"
+        )
 
     def _merge_hjson(self, hjson_block: str, item_name: str) -> None:
         """Append or replace an item's HJSON block in en-US.hjson."""
@@ -419,25 +456,38 @@ class Integrator:
         existing_match = new_item_re.search(existing)
         if existing_match:
             # Replace existing block
-            updated = existing[:existing_match.start()] + new_item_block + existing[existing_match.end():]
+            updated = (
+                existing[: existing_match.start()]
+                + new_item_block
+                + existing[existing_match.end() :]
+            )
             hjson_path.write_text(updated, encoding="utf-8")
         else:
             # Insert before the closing of the Items block
             items_close = re.search(r"(\n\t\t\})", existing)
             if items_close:
                 insert_pos = items_close.start()
-                updated = existing[:insert_pos] + "\n\t\t\t" + new_item_block + existing[insert_pos:]
+                updated = (
+                    existing[:insert_pos]
+                    + "\n\t\t\t"
+                    + new_item_block
+                    + existing[insert_pos:]
+                )
                 hjson_path.write_text(updated, encoding="utf-8")
             else:
                 hjson_path.write_text(hjson_block, encoding="utf-8")
 
     def _ensure_mod_enabled(self, mod_name: str) -> None:
         """Ensure mod_name appears in tModLoader's enabled.json."""
-        enabled_path = tmod_enabled_json_path()
+        enabled_path = self._mod_root.parent.parent / "Mods" / "enabled.json"
         enabled_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            enabled: list[str] = json.loads(enabled_path.read_text(encoding="utf-8")) if enabled_path.exists() else []
+            enabled: list[str] = (
+                json.loads(enabled_path.read_text(encoding="utf-8"))
+                if enabled_path.exists()
+                else []
+            )
         except (json.JSONDecodeError, OSError):
             enabled = []
 

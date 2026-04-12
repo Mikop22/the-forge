@@ -52,17 +52,12 @@ class CoderAgent:
         self._llm = ChatOpenAI(model=model_name, timeout=300, reasoning_effort="high")
 
         # Code generation: prompt → LLM → structured Pydantic output
-        self._gen_chain = (
-            build_codegen_prompt()
-            | self._llm.with_structured_output(CSharpOutput)
+        self._gen_chain = build_codegen_prompt() | self._llm.with_structured_output(
+            CSharpOutput
         )
 
         # Repair: prompt → LLM → raw string (corrected C# source)
-        self._repair_chain = (
-            build_repair_prompt()
-            | self._llm
-            | StrOutputParser()
-        )
+        self._repair_chain = build_repair_prompt() | self._llm | StrOutputParser()
 
         # Logic review step
         self._reviewer = WeaponReviewer(model_name=model_name)
@@ -86,21 +81,30 @@ class CoderAgent:
             and ``status``.
         """
         parsed = ForgeManifest.model_validate(manifest)
+        validated_manifest = parsed.model_dump()
 
         sub_type = parsed.sub_type
         damage_class = DAMAGE_CLASS_MAP.get(sub_type, "DamageClass.Melee")
         use_style = USE_STYLE_MAP.get(sub_type, "ItemUseStyleID.Swing")
         custom_projectile = parsed.mechanics.custom_projectile
         shot_style = parsed.mechanics.shot_style
-        reference_snippet = get_reference_snippet(sub_type, custom_projectile, shot_style=shot_style)
+        combat_package = _reference_combat_package_key(parsed)
+        reference_snippet = get_reference_snippet(
+            sub_type,
+            custom_projectile,
+            shot_style=shot_style,
+            combat_package=combat_package,
+        )
 
         # 1. Invoke LLM for C# generation
-        llm_result: CSharpOutput = self._gen_chain.invoke({
-            "manifest_json": json.dumps(manifest, indent=2),
-            "damage_class": damage_class,
-            "use_style": use_style,
-            "reference_snippet": reference_snippet,
-        })
+        llm_result: CSharpOutput = self._gen_chain.invoke(
+            {
+                "manifest_json": json.dumps(validated_manifest, indent=2),
+                "damage_class": damage_class,
+                "use_style": use_style,
+                "reference_snippet": reference_snippet,
+            }
+        )
 
         cs_code = _strip_markdown_fences(llm_result.code)
 
@@ -125,11 +129,11 @@ class CoderAgent:
             ).model_dump()
 
         # 3. Game-logic review
-        cs_code, review_output = self._reviewer.review(manifest, cs_code)
+        cs_code, review_output = self._reviewer.review(validated_manifest, cs_code)
 
         if not review_output.approved:
             issue_list = [
-                f"[{i.severity}] {i.category}: {i.description}" 
+                f"[{i.severity}] {i.category}: {i.description}"
                 for i in review_output.issues
             ]
             return ForgeOutput(
@@ -203,10 +207,12 @@ class CoderAgent:
 
     def _repair(self, original_code: str, error_log: str) -> str:
         """Invoke the repair chain and return cleaned C# source."""
-        raw = self._repair_chain.invoke({
-            "original_code": original_code,
-            "error_log": error_log,
-        })
+        raw = self._repair_chain.invoke(
+            {
+                "original_code": original_code,
+                "error_log": error_log,
+            }
+        )
         return _strip_markdown_fences(raw)
 
     @staticmethod
@@ -233,6 +239,13 @@ class CoderAgent:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
+
+def _reference_combat_package_key(parsed: ForgeManifest) -> str | None:
+    if parsed.resolved_combat is not None:
+        return parsed.resolved_combat.package_key
+    return parsed.mechanics.combat_package
+
 
 def _strip_markdown_fences(text: str) -> str:
     """Remove ```csharp ... ``` wrappers if the LLM included them."""

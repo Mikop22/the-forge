@@ -35,10 +35,17 @@ namespace ForgeConnector
         private string _modSourcesDir = string.Empty;
         private string _triggerPath = string.Empty;
         private string _injectPath = string.Empty;
+        private string _hiddenLabRequestPath = string.Empty;
+        private string _hiddenLabResultPath = string.Empty;
+        private string _runtimeEventsPath = string.Empty;
         private string _heartbeatPath = string.Empty;
         private string _statusPath = string.Empty;
         private int _watcherRetryCooldown;
         private int _injectPollCooldown;
+        private string _activeHiddenLabCandidateId = string.Empty;
+        private string _activeHiddenLabRunId = string.Empty;
+        private string _activeHiddenLabPackageKey = string.Empty;
+        private string _activeHiddenLabLoopFamily = string.Empty;
 
         // ------------------------------------------------------------------
         // Lifecycle
@@ -49,10 +56,14 @@ namespace ForgeConnector
             _modSourcesDir = GetModSourcesDir();
             _triggerPath   = Path.Combine(_modSourcesDir, "command_trigger.json");
             _injectPath    = Path.Combine(_modSourcesDir, "forge_inject.json");
+            _hiddenLabRequestPath = Path.Combine(_modSourcesDir, "forge_lab_hidden_request.json");
+            _hiddenLabResultPath = Path.Combine(_modSourcesDir, "forge_lab_hidden_result.json");
+            _runtimeEventsPath = Path.Combine(_modSourcesDir, "forge_lab_runtime_events.jsonl");
             _heartbeatPath = Path.Combine(_modSourcesDir, "forge_connector_alive.json");
             _statusPath    = Path.Combine(_modSourcesDir, "forge_connector_status.json");
 
             RegisterTemplateTypeIds();
+            ForgeLabTelemetry.Configure(_modSourcesDir);
             WriteHeartbeat();
             StartWatcher();
         }
@@ -62,6 +73,7 @@ namespace ForgeConnector
             _watcher?.Dispose();
             _watcher = null;
             ForgeManifestStore.Clear();
+            ForgeLabTelemetry.Clear();
 
             try { File.Delete(_heartbeatPath); } catch { /* best-effort */ }
         }
@@ -136,6 +148,8 @@ namespace ForgeConnector
         {
             TryStartWatcherIfNeeded();
             PollInjectFileFallback();
+            ForgeLabTelemetry.EmitCandidateCompletedForIdleCandidates();
+            TryWriteHiddenLabResult();
 
             // Handle legacy reload request
             if (Interlocked.Exchange(ref _reloadRequested, 0) == 1)
@@ -191,7 +205,9 @@ namespace ForgeConnector
 
                 var data = ParseManifest(root);
                 int itemSlot = ForgeManifestStore.NextItemSlot();
+                ForgeLabTelemetryContext telemetryContext = CreateTelemetryContext(root, data.Name);
                 ForgeManifestStore.RegisterItem(itemSlot, data);
+                ForgeLabTelemetry.RegisterItemContext(itemSlot, telemetryContext);
 
                 string itemSpritePath = GetSpritePath(root, "sprite_path");
                 if (!string.IsNullOrEmpty(itemSpritePath) && File.Exists(itemSpritePath))
@@ -238,6 +254,7 @@ namespace ForgeConnector
                     }
 
                     ForgeManifestStore.RegisterProjectile(projSlot, projData);
+                    ForgeLabTelemetry.RegisterProjectileContext(projSlot, telemetryContext);
 
                     if (!string.IsNullOrEmpty(projSpritePath) && File.Exists(projSpritePath))
                     {
@@ -628,6 +645,29 @@ namespace ForgeConnector
             return root.TryGetProperty("manifest", out var manifest) ? manifest : root;
         }
 
+        private static ForgeLabTelemetryContext CreateTelemetryContext(JsonElement root, string fallbackCandidateId)
+        {
+            JsonElement manifest = GetManifest(root);
+            JsonElement mechanics = TryGetObject(manifest, "mechanics", out var mechanicsValue) ? mechanicsValue : default;
+            JsonElement resolvedCombat = TryGetObject(manifest, "resolved_combat", out var resolvedCombatValue) ? resolvedCombatValue : default;
+
+            string candidateId = GetStr(root, "candidate_id", GetStr(manifest, "candidate_id", fallbackCandidateId));
+            string runId = GetStr(root, "run_id", string.Empty);
+            string packageKey = GetStr(resolvedCombat, "package_key", GetStr(mechanics, "combat_package", string.Empty));
+            string loopFamily = GetStr(resolvedCombat, "loop_family", ResolveLoopFamily(packageKey));
+
+            return ForgeLabTelemetry.CreateContext(candidateId, runId, packageKey, loopFamily, fallbackCandidateId);
+        }
+
+        private static string ResolveLoopFamily(string packageKey)
+        {
+            return packageKey switch
+            {
+                "storm_brand" => "mark_cashout",
+                _ => string.Empty,
+            };
+        }
+
         private static bool TryGetObject(JsonElement parent, string prop, out JsonElement value)
         {
             if (parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(prop, out value)
@@ -865,6 +905,9 @@ namespace ForgeConnector
             _modSourcesDir = GetModSourcesDir();
             _triggerPath = Path.Combine(_modSourcesDir, "command_trigger.json");
             _injectPath = Path.Combine(_modSourcesDir, "forge_inject.json");
+            _hiddenLabRequestPath = Path.Combine(_modSourcesDir, "forge_lab_hidden_request.json");
+            _hiddenLabResultPath = Path.Combine(_modSourcesDir, "forge_lab_hidden_result.json");
+            _runtimeEventsPath = Path.Combine(_modSourcesDir, "forge_lab_runtime_events.jsonl");
             _heartbeatPath = Path.Combine(_modSourcesDir, "forge_connector_alive.json");
             _statusPath = Path.Combine(_modSourcesDir, "forge_connector_status.json");
             WriteHeartbeat();
@@ -882,12 +925,16 @@ namespace ForgeConnector
 
             _injectPollCooldown = 0;
 
-            if (string.IsNullOrEmpty(_injectPath) || !File.Exists(_injectPath))
-                return;
-
             try
             {
-                HandleInjectTrigger();
+                if (!string.IsNullOrEmpty(_injectPath) && File.Exists(_injectPath))
+                {
+                    HandleInjectTrigger();
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(_hiddenLabRequestPath) && File.Exists(_hiddenLabRequestPath))
+                    HandleHiddenLabRequestTrigger();
             }
             catch (Exception ex)
             {
@@ -903,6 +950,8 @@ namespace ForgeConnector
                 HandleCommandTrigger();
             else if (fileName == "forge_inject.json")
                 HandleInjectTrigger();
+            else if (fileName == "forge_lab_hidden_request.json")
+                HandleHiddenLabRequestTrigger();
         }
 
         private void HandleCommandTrigger()
@@ -947,6 +996,112 @@ namespace ForgeConnector
             catch (Exception ex)
             {
                 Mod.Logger.Error("[ForgeConnector] HandleInjectTrigger failed: " + ex.Message);
+            }
+        }
+
+        private void HandleHiddenLabRequestTrigger()
+        {
+            Thread.Sleep(50);
+
+            try
+            {
+                string json = File.ReadAllText(_hiddenLabRequestPath);
+                using JsonDocument doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                _activeHiddenLabCandidateId = root.TryGetProperty("candidate_id", out var candidateEl)
+                    ? candidateEl.GetString() ?? string.Empty
+                    : string.Empty;
+                _activeHiddenLabRunId = root.TryGetProperty("run_id", out var runEl)
+                    ? runEl.GetString() ?? string.Empty
+                    : string.Empty;
+                _activeHiddenLabPackageKey = root.TryGetProperty("package_key", out var packageEl)
+                    ? packageEl.GetString() ?? string.Empty
+                    : string.Empty;
+                _activeHiddenLabLoopFamily = root.TryGetProperty("loop_family", out var loopEl)
+                    ? loopEl.GetString() ?? string.Empty
+                    : string.Empty;
+
+                try { File.Delete(_hiddenLabResultPath); } catch { }
+                try { File.Delete(_hiddenLabRequestPath); } catch { }
+
+                Interlocked.Exchange(ref _pendingInjectJson, json);
+                Interlocked.Exchange(ref _injectRequested, 1);
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] HandleHiddenLabRequestTrigger failed: " + ex.Message);
+            }
+        }
+
+        private void TryWriteHiddenLabResult()
+        {
+            if (string.IsNullOrWhiteSpace(_activeHiddenLabCandidateId)
+                || string.IsNullOrWhiteSpace(_activeHiddenLabRunId)
+                || string.IsNullOrWhiteSpace(_hiddenLabResultPath)
+                || string.IsNullOrWhiteSpace(_runtimeEventsPath)
+                || !File.Exists(_runtimeEventsPath))
+                return;
+
+            try
+            {
+                var events = new List<JsonElement>();
+                bool sawCashout = false;
+                bool sawCompletion = false;
+                foreach (string line in File.ReadAllLines(_runtimeEventsPath))
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    using JsonDocument eventDoc = JsonDocument.Parse(line);
+                    JsonElement root = eventDoc.RootElement;
+                    if (!root.TryGetProperty("candidate_id", out var candidateEl)
+                        || !string.Equals(candidateEl.GetString(), _activeHiddenLabCandidateId, StringComparison.Ordinal))
+                        continue;
+
+                    if (!root.TryGetProperty("run_id", out var runEl)
+                        || !string.Equals(runEl.GetString(), _activeHiddenLabRunId, StringComparison.Ordinal))
+                        continue;
+
+                    events.Add(root.Clone());
+
+                    if (root.TryGetProperty("event_type", out var eventTypeEl)
+                        && string.Equals(eventTypeEl.GetString(), "cashout_triggered", StringComparison.Ordinal))
+                    {
+                        sawCashout = true;
+                    }
+
+                    if (root.TryGetProperty("event_type", out eventTypeEl)
+                        && string.Equals(eventTypeEl.GetString(), "candidate_completed", StringComparison.Ordinal))
+                    {
+                        sawCompletion = true;
+                    }
+                }
+
+                if (events.Count == 0 || (!sawCashout && !sawCompletion))
+                    return;
+
+                string json = JsonSerializer.Serialize(new
+                {
+                    candidate_id = _activeHiddenLabCandidateId,
+                    run_id = _activeHiddenLabRunId,
+                    package_key = _activeHiddenLabPackageKey,
+                    loop_family = _activeHiddenLabLoopFamily,
+                    events,
+                }, new JsonSerializerOptions { WriteIndented = true });
+
+                string tmp = _hiddenLabResultPath + ".tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, _hiddenLabResultPath, overwrite: true);
+
+                _activeHiddenLabCandidateId = string.Empty;
+                _activeHiddenLabRunId = string.Empty;
+                _activeHiddenLabPackageKey = string.Empty;
+                _activeHiddenLabLoopFamily = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Error("[ForgeConnector] TryWriteHiddenLabResult failed: " + ex.Message);
             }
         }
 

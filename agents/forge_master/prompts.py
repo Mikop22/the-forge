@@ -25,11 +25,14 @@ ModProjectile.OnHitNPC signature: \
 # Code-generation prompt
 # ---------------------------------------------------------------------------
 
-CODEGEN_SYSTEM = """\
+CODEGEN_SYSTEM = (
+    """\
 You are an expert C# developer specializing in **tModLoader 1.4.4**. You \
 strictly adhere to the 1.4.4 API.
 
-""" + FORGE_ABSOLUTE_RULES + """
+"""
+    + FORGE_ABSOLUTE_RULES
+    + """
 
 ## Allowed Imports (use whichever are needed)
 - `using Terraria;`
@@ -45,16 +48,37 @@ strictly adhere to the 1.4.4 API.
 - Namespace: `ForgeGeneratedMod.Content.Items`.
 - The class name MUST exactly match the `item_name` from the manifest.
 - Include `SetDefaults()`, `AddRecipes()`, and optionally `OnHitNPC()` / \
-`SetStaticDefaults()` as needed.
+  `SetStaticDefaults()` as needed.
+- If the manifest includes a combat package, `resolved_combat` is required and is \
+  the source of truth for combat behavior. \
+  `resolved_combat.package_key` is the authoritative package selector. \
+  `mechanics.combat_package` as the human-readable package selector that should align with `resolved_combat.package_key`.
+- Read `resolved_combat.package_key`, `resolved_combat.delivery_module`, \
+  `resolved_combat.combo_module`, `resolved_combat.finisher_module`, and \
+  `resolved_combat.presentation_module` explicitly when present. Those resolved \
+  fields win over any freeform interpretation.
+- If `resolved_combat.package_key` identifies a phase-1 package, implement its \
+  package semantics explicitly:
+  * `storm_brand`: use `delivery_module` for the seed trigger, \
+    `combo_module` for the escalate state, `finisher_module` for the reachable \
+    payoff, and `presentation_module` for the finisher escalation.
+  * `orbit_furnace`: use `delivery_module` for the orbit/heat seed, \
+    `combo_module` for the heated orbit state, `finisher_module` for the \
+    furnace payoff, and `presentation_module` for the hotter/larger finisher.
+  * `frost_shatter`: use `delivery_module` for the chill/mark seed, \
+    `combo_module` for the brittle/frozen state, `finisher_module` for the \
+    shatter payoff, and `presentation_module` for the burst escalation.
 - If the manifest has `mechanics.custom_projectile` set to `true`, you MUST \
-generate a separate `ModProjectile` class in the same file. The ModProjectile \
-class should:
+  generate a separate `ModProjectile` class in the same file. The ModProjectile \
+  class should:
   * Use basic straight-line movement behavior (see reference example)
   * Have appropriate width/height (typically 16x16 for projectiles)
   * Set `Projectile.friendly = true` and appropriate `DamageType`
   * The item's `Item.shoot` should reference it via `ModContent.ProjectileType<ClassName>()`
+- If no package is present in the manifest, preserve the legacy \
+  `mechanics.shot_style` behavior below.
 - If the manifest has `mechanics.shot_style` set to a non-"direct" value, \
-follow the reference example pattern exactly. Specific rules per style:
+  follow the reference example pattern exactly. Specific rules per style:
   * "sky_strike": override Shoot() to spawn projectiles from above. Do NOT \
 generate a custom ModProjectile — use the vanilla ProjectileID from the manifest.
   * "homing": generate both ModItem and ModProjectile. The ModProjectile AI() \
@@ -82,6 +106,7 @@ to the orb tip (Center + velocity).
 ```
 
 Your goal is to write code that compiles on the first try."""
+)
 
 CODEGEN_HUMAN = """\
 Generate the C# ModItem class for the following item manifest:
@@ -97,28 +122,34 @@ Additional context:
 
 def build_codegen_prompt() -> ChatPromptTemplate:
     """Build the ChatPromptTemplate for C# code generation."""
-    return ChatPromptTemplate.from_messages([
-        ("system", CODEGEN_SYSTEM),
-        ("human", CODEGEN_HUMAN),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", CODEGEN_SYSTEM),
+            ("human", CODEGEN_HUMAN),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
 # Repair prompt
 # ---------------------------------------------------------------------------
 
-REPAIR_SYSTEM = """\
+REPAIR_SYSTEM = (
+    """\
 You are a C# compiler-error debugger specializing in **tModLoader 1.4.4**.
 
 ## Your Task
 You will receive a C# source file and a compiler error. You must fix the code \
 so it compiles correctly.
 
-""" + FORGE_ABSOLUTE_RULES + """
+"""
+    + FORGE_ABSOLUTE_RULES
+    + """
 
 ## Output
 Return ONLY the corrected, complete C# source file. No markdown fences, \
 no explanations."""
+)
 
 REPAIR_HUMAN = """\
 ## Original Code
@@ -136,7 +167,9 @@ Fix the code above and return the complete corrected C# file."""
 
 def build_repair_prompt() -> ChatPromptTemplate:
     """Build the ChatPromptTemplate for the repair/self-healing chain."""
-    return ChatPromptTemplate.from_messages([
-        ("system", REPAIR_SYSTEM),
-        ("human", REPAIR_HUMAN),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", REPAIR_SYSTEM),
+            ("human", REPAIR_HUMAN),
+        ]
+    )

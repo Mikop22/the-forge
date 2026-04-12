@@ -2,7 +2,9 @@ import unittest
 from typing import get_args
 
 import pytest
+from pydantic import ValidationError
 
+from architect import weapon_prompt
 from architect.models import (
     AMMO_ID_CHOICES,
     AMMO_ID_TUPLE,
@@ -10,6 +12,7 @@ from architect.models import (
     BUFF_ID_CHOICES,
     BUFF_ID_TUPLE,
     BuffIDLiteral,
+    ItemManifest,
     LLMMechanics,
     Mechanics,
     SHOT_STYLE_CHOICES,
@@ -37,7 +40,9 @@ class IdRegistryInvariantTests(unittest.TestCase):
 
     def test_shot_style_literal_matches_across_models(self) -> None:
         """shot_style Literal in forge_master must match architect's SHOT_STYLE_CHOICES."""
-        fm_choices = set(get_args(ManifestMechanics.model_fields["shot_style"].annotation))
+        fm_choices = set(
+            get_args(ManifestMechanics.model_fields["shot_style"].annotation)
+        )
         self.assertEqual(fm_choices, set(SHOT_STYLE_CHOICES))
 
 
@@ -69,9 +74,7 @@ class BuffNormalizationTests(unittest.TestCase):
         self.assertEqual(mechanics.on_hit_buff, "BuffID.Weak")
 
     def test_on_hit_buff_prose_with_frostburn(self) -> None:
-        mechanics = LLMMechanics(
-            on_hit_buff="Applies Frostburn to enemies on contact"
-        )
+        mechanics = LLMMechanics(on_hit_buff="Applies Frostburn to enemies on contact")
         self.assertEqual(mechanics.on_hit_buff, "BuffID.Frostburn")
 
     def test_on_hit_buff_prose_with_cursed_inferno(self) -> None:
@@ -102,9 +105,7 @@ class BuffNormalizationTests(unittest.TestCase):
         self.assertIsNone(mechanics.on_hit_buff)
 
     def test_on_hit_buff_burning_prose_maps_to_on_fire(self) -> None:
-        mechanics = LLMMechanics(
-            on_hit_buff="On hit, inflicts a brief burning effect"
-        )
+        mechanics = LLMMechanics(on_hit_buff="On hit, inflicts a brief burning effect")
         self.assertEqual(mechanics.on_hit_buff, "BuffID.OnFire")
 
     def test_buff_id_accepts_canonical(self) -> None:
@@ -148,33 +149,36 @@ class MechanicsBuffNormalizationTests(unittest.TestCase):
         self.assertTrue(m.custom_projectile)
 
 
-@pytest.mark.parametrize("raw,expected", [
-    # Canonical forms — unchanged
-    ("BuffID.OnFire",       "BuffID.OnFire"),
-    ("BuffID.Frostburn",    "BuffID.Frostburn"),
-    # Exact alias — existing coverage
-    ("On Fire!",            "BuffID.OnFire"),
-    ("On Fire",             "BuffID.OnFire"),
-    # Case variants — newly hardened
-    ("on fire!",            "BuffID.OnFire"),
-    ("ON FIRE!",            "BuffID.OnFire"),
-    ("on Fire",             "BuffID.OnFire"),
-    ("POISONED",            "BuffID.Poisoned"),
-    ("poisoned",            "BuffID.Poisoned"),
-    ("SLIMED",              "BuffID.Slimed"),
-    ("well fed",            "BuffID.WellFed"),
-    ("WELL FED",            "BuffID.WellFed"),
-    ("cursed inferno",      "BuffID.CursedInferno"),
-    ("CURSED INFERNO",      "BuffID.CursedInferno"),
-    ("shadow flame",        "BuffID.ShadowFlame"),
-    ("shadowflame",         "BuffID.ShadowFlame"),
-    ("SHADOWFLAME",         "BuffID.ShadowFlame"),
-    ("frostburn",           "BuffID.Frostburn"),
-    ("FROSTBURN",           "BuffID.Frostburn"),
-    # Completely unrecognised → None (no crash)
-    ("completely_bogus",    None),
-    ("BuffID.Chilled",      None),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Canonical forms — unchanged
+        ("BuffID.OnFire", "BuffID.OnFire"),
+        ("BuffID.Frostburn", "BuffID.Frostburn"),
+        # Exact alias — existing coverage
+        ("On Fire!", "BuffID.OnFire"),
+        ("On Fire", "BuffID.OnFire"),
+        # Case variants — newly hardened
+        ("on fire!", "BuffID.OnFire"),
+        ("ON FIRE!", "BuffID.OnFire"),
+        ("on Fire", "BuffID.OnFire"),
+        ("POISONED", "BuffID.Poisoned"),
+        ("poisoned", "BuffID.Poisoned"),
+        ("SLIMED", "BuffID.Slimed"),
+        ("well fed", "BuffID.WellFed"),
+        ("WELL FED", "BuffID.WellFed"),
+        ("cursed inferno", "BuffID.CursedInferno"),
+        ("CURSED INFERNO", "BuffID.CursedInferno"),
+        ("shadow flame", "BuffID.ShadowFlame"),
+        ("shadowflame", "BuffID.ShadowFlame"),
+        ("SHADOWFLAME", "BuffID.ShadowFlame"),
+        ("frostburn", "BuffID.Frostburn"),
+        ("FROSTBURN", "BuffID.Frostburn"),
+        # Completely unrecognised → None (no crash)
+        ("completely_bogus", None),
+        ("BuffID.Chilled", None),
+    ],
+)
 def test_normalize_buff_id_variants(raw: str, expected):
     assert _normalize_buff_id(raw) == expected
 
@@ -208,12 +212,28 @@ class ShotStyleTests(unittest.TestCase):
         self.assertEqual(m.shot_style, "sky_strike")
 
     def test_llm_mechanics_accepts_all_styles(self) -> None:
-        for style in ("homing", "boomerang", "orbit", "explosion", "pierce", "chain_lightning", "channeled"):
+        for style in (
+            "homing",
+            "boomerang",
+            "orbit",
+            "explosion",
+            "pierce",
+            "chain_lightning",
+            "channeled",
+        ):
             m = LLMMechanics(shot_style=style)
             self.assertEqual(m.shot_style, style)
 
     def test_mechanics_accepts_all_styles(self) -> None:
-        for style in ("homing", "boomerang", "orbit", "explosion", "pierce", "chain_lightning", "channeled"):
+        for style in (
+            "homing",
+            "boomerang",
+            "orbit",
+            "explosion",
+            "pierce",
+            "chain_lightning",
+            "channeled",
+        ):
             m = Mechanics(
                 crafting_material="ItemID.Wood",
                 crafting_cost=5,
@@ -224,8 +244,262 @@ class ShotStyleTests(unittest.TestCase):
 
     def test_llm_mechanics_rejects_invalid_shot_style(self) -> None:
         from pydantic import ValidationError
+
         with self.assertRaises(ValidationError):
             LLMMechanics(shot_style="orbital")
+
+
+class CombatPackageManifestTests(unittest.TestCase):
+    def test_llm_mechanics_requires_delivery_style_and_payoff_rate_for_package(
+        self,
+    ) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="combat_package requires delivery_style and payoff_rate",
+        ):
+            LLMMechanics(combat_package="storm_brand")
+
+    def test_mechanics_requires_delivery_style_and_payoff_rate_for_package(
+        self,
+    ) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="combat_package requires delivery_style and payoff_rate",
+        ):
+            Mechanics(
+                combat_package="storm_brand",
+                crafting_material="ItemID.Wood",
+                crafting_cost=5,
+                crafting_tile="TileID.WorkBenches",
+            )
+
+    def test_llm_mechanics_accepts_bounded_combat_package_fields(self) -> None:
+        mechanics = LLMMechanics(
+            combat_package="storm_brand",
+            delivery_style="direct",
+            payoff_rate="fast",
+        )
+
+        self.assertEqual(mechanics.combat_package, "storm_brand")
+        self.assertEqual(mechanics.delivery_style, "direct")
+        self.assertEqual(mechanics.payoff_rate, "fast")
+
+    def test_mechanics_accepts_bounded_combat_package_fields(self) -> None:
+        mechanics = Mechanics(
+            combat_package="storm_brand",
+            delivery_style="direct",
+            payoff_rate="fast",
+            crafting_material="ItemID.Wood",
+            crafting_cost=5,
+            crafting_tile="TileID.WorkBenches",
+        )
+
+        self.assertEqual(mechanics.combat_package, "storm_brand")
+        self.assertEqual(mechanics.delivery_style, "direct")
+        self.assertEqual(mechanics.payoff_rate, "fast")
+
+    def test_item_manifest_requires_delivery_style_and_payoff_rate_for_package(
+        self,
+    ) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="combat_package requires delivery_style and payoff_rate",
+        ):
+            ItemManifest.model_validate(
+                {
+                    "item_name": "StormBrand",
+                    "display_name": "Storm Brand",
+                    "tooltip": "Calls down marked thunder.",
+                    "content_type": "Weapon",
+                    "type": "Weapon",
+                    "sub_type": "Staff",
+                    "stats": {
+                        "damage": 34,
+                        "knockback": 5.5,
+                        "crit_chance": 4,
+                        "use_time": 22,
+                        "auto_reuse": True,
+                        "rarity": "ItemRarityID.Orange",
+                    },
+                    "visuals": {},
+                    "presentation": {"fx_profile": "celestial_shock"},
+                    "mechanics": {
+                        "combat_package": "storm_brand",
+                        "crafting_material": "ItemID.FallenStar",
+                        "crafting_cost": 12,
+                        "crafting_tile": "TileID.Anvils",
+                    },
+                }
+            )
+
+    def test_item_manifest_lowers_combat_package_and_generates_projectile_visuals(
+        self,
+    ) -> None:
+        manifest = ItemManifest.model_validate(
+            {
+                "item_name": "StormBrand",
+                "display_name": "Storm Brand",
+                "tooltip": "Calls down marked thunder.",
+                "content_type": "Weapon",
+                "type": "Weapon",
+                "sub_type": "Staff",
+                "stats": {
+                    "damage": 34,
+                    "knockback": 5.5,
+                    "crit_chance": 4,
+                    "use_time": 22,
+                    "auto_reuse": True,
+                    "rarity": "ItemRarityID.Orange",
+                },
+                "visuals": {},
+                "presentation": {"fx_profile": "celestial_shock"},
+                "mechanics": {
+                    "combat_package": "storm_brand",
+                    "delivery_style": "direct",
+                    "payoff_rate": "fast",
+                    "crafting_material": "ItemID.FallenStar",
+                    "crafting_cost": 12,
+                    "crafting_tile": "TileID.Anvils",
+                },
+            }
+        )
+
+        self.assertEqual(manifest.resolved_combat.package_key, "storm_brand")
+        self.assertEqual(manifest.mechanics.shot_style, "direct")
+        self.assertTrue(manifest.mechanics.custom_projectile)
+        self.assertIsNotNone(manifest.projectile_visuals)
+
+    def test_item_manifest_preserves_legacy_behavior_without_combat_package(
+        self,
+    ) -> None:
+        manifest = ItemManifest.model_validate(
+            {
+                "item_name": "CinderBrand",
+                "display_name": "Cinder Brand",
+                "tooltip": "A fiery sword.",
+                "content_type": "Weapon",
+                "type": "Weapon",
+                "sub_type": "Sword",
+                "stats": {
+                    "damage": 34,
+                    "knockback": 5.5,
+                    "crit_chance": 4,
+                    "use_time": 22,
+                    "auto_reuse": True,
+                    "rarity": "ItemRarityID.Orange",
+                },
+                "visuals": {},
+                "mechanics": {
+                    "shot_style": "direct",
+                    "custom_projectile": True,
+                    "crafting_material": "ItemID.HellstoneBar",
+                    "crafting_cost": 15,
+                    "crafting_tile": "TileID.Anvils",
+                },
+            }
+        )
+
+        self.assertIsNone(manifest.resolved_combat)
+        self.assertEqual(manifest.mechanics.shot_style, "direct")
+        self.assertTrue(manifest.mechanics.custom_projectile)
+        self.assertIsNotNone(manifest.projectile_visuals)
+
+    def test_item_manifest_clears_injected_resolved_combat_without_combat_package(
+        self,
+    ) -> None:
+        manifest = ItemManifest.model_validate(
+            {
+                "item_name": "CinderBrand",
+                "display_name": "Cinder Brand",
+                "tooltip": "A fiery sword.",
+                "content_type": "Weapon",
+                "type": "Weapon",
+                "sub_type": "Sword",
+                "stats": {
+                    "damage": 34,
+                    "knockback": 5.5,
+                    "crit_chance": 4,
+                    "use_time": 22,
+                    "auto_reuse": True,
+                    "rarity": "ItemRarityID.Orange",
+                },
+                "visuals": {},
+                "mechanics": {
+                    "shot_style": "direct",
+                    "custom_projectile": True,
+                    "crafting_material": "ItemID.HellstoneBar",
+                    "crafting_cost": 15,
+                    "crafting_tile": "TileID.Anvils",
+                },
+                "resolved_combat": {
+                    "package_key": "storm_brand",
+                    "delivery_module": "wrong",
+                    "combo_module": "wrong",
+                    "finisher_module": "wrong",
+                    "presentation_module": "wrong",
+                    "player_state_kind": "wrong",
+                    "npc_state_kind": "wrong",
+                    "legacy_projection": {
+                        "shot_style": "homing",
+                        "custom_projectile": False,
+                        "shoot_projectile": "ProjectileID.Fireball",
+                        "projectile_visuals_required": False,
+                    },
+                },
+            }
+        )
+
+        self.assertIsNone(manifest.resolved_combat)
+
+    def test_item_manifest_overwrites_stale_resolved_combat_from_package_inputs(
+        self,
+    ) -> None:
+        manifest = ItemManifest.model_validate(
+            {
+                "item_name": "StormBrand",
+                "display_name": "Storm Brand",
+                "tooltip": "Calls down marked thunder.",
+                "content_type": "Weapon",
+                "type": "Weapon",
+                "sub_type": "Staff",
+                "stats": {
+                    "damage": 34,
+                    "knockback": 5.5,
+                    "crit_chance": 4,
+                    "use_time": 22,
+                    "auto_reuse": True,
+                    "rarity": "ItemRarityID.Orange",
+                },
+                "visuals": {},
+                "presentation": {"fx_profile": "celestial_shock"},
+                "mechanics": {
+                    "combat_package": "storm_brand",
+                    "delivery_style": "direct",
+                    "payoff_rate": "fast",
+                    "crafting_material": "ItemID.FallenStar",
+                    "crafting_cost": 12,
+                    "crafting_tile": "TileID.Anvils",
+                },
+                "resolved_combat": {
+                    "package_key": "frost_shatter",
+                    "delivery_module": "wrong",
+                    "combo_module": "wrong",
+                    "finisher_module": "wrong",
+                    "presentation_module": "wrong",
+                    "player_state_kind": "wrong",
+                    "npc_state_kind": "wrong",
+                    "legacy_projection": {
+                        "shot_style": "homing",
+                        "custom_projectile": False,
+                        "shoot_projectile": "ProjectileID.Fireball",
+                        "projectile_visuals_required": False,
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(manifest.resolved_combat.package_key, "storm_brand")
+        self.assertEqual(manifest.resolved_combat.combo_module, "npc_marks_3")
 
 
 class CustomProjectileCoercionTests(unittest.TestCase):
@@ -290,6 +564,75 @@ class CustomProjectileCoercionTests(unittest.TestCase):
             crafting_tile="TileID.WorkBenches",
         )
         self.assertTrue(m.custom_projectile)
+
+
+class WeaponPromptContractTests(unittest.TestCase):
+    def test_weapon_prompt_describes_phase_1_package_contract(
+        self,
+    ) -> None:
+        prompt = weapon_prompt.SYSTEM_PROMPT
+
+        self.assertEqual(
+            weapon_prompt.PACKAGE_PRIMARY_FIELDS,
+            (
+                "mechanics.combat_package",
+                "mechanics.delivery_style",
+                "mechanics.payoff_rate",
+                "presentation.fx_profile",
+            ),
+        )
+        self.assertEqual(
+            weapon_prompt.SUPPORTED_COMBAT_PACKAGES,
+            ("storm_brand", "orbit_furnace", "frost_shatter"),
+        )
+        self.assertEqual(
+            weapon_prompt.PHASE_1_PACKAGE_SUPPORT_SCOPE,
+            ('content_type="Weapon"', 'sub_type="Staff"'),
+        )
+        self.assertEqual(
+            weapon_prompt.LEGACY_FALLBACK_FIELDS,
+            (
+                "mechanics.shot_style",
+                "mechanics.custom_projectile",
+                "mechanics.shoot_projectile",
+            ),
+        )
+        self.assertEqual(
+            weapon_prompt.UNSUPPORTED_FAMILY_FALLBACK_TOKENS,
+            (
+                "unsupported weapon families",
+                "Weapon",
+                "Staff",
+                "legacy projectile fields",
+                "combat packages",
+            ),
+        )
+        self.assertEqual(
+            weapon_prompt.LEGACY_HOMAGE_PROJECTILE_TOKENS,
+            (
+                "ProjectileID.*",
+                "legacy projectile path",
+                "explicit vanilla homage weapons",
+            ),
+        )
+
+        for field in weapon_prompt.PACKAGE_PRIMARY_FIELDS:
+            self.assertIn(field, prompt)
+
+        for package_key in weapon_prompt.SUPPORTED_COMBAT_PACKAGES:
+            self.assertIn(package_key, prompt)
+
+        for scope_token in weapon_prompt.PHASE_1_PACKAGE_SUPPORT_SCOPE:
+            self.assertIn(scope_token, prompt)
+
+        for field in weapon_prompt.LEGACY_FALLBACK_FIELDS:
+            self.assertIn(field, prompt)
+
+        for token in weapon_prompt.UNSUPPORTED_FAMILY_FALLBACK_TOKENS:
+            self.assertIn(token, prompt)
+
+        for token in weapon_prompt.LEGACY_HOMAGE_PROJECTILE_TOKENS:
+            self.assertIn(token, prompt)
 
 
 if __name__ == "__main__":

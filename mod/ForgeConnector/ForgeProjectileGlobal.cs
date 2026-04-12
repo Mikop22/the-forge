@@ -2,6 +2,8 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
+using Terraria.DataStructures;
+using Terraria.ID;
 using Terraria.ModLoader;
 using ForgeConnector.Content.Projectiles;
 
@@ -13,9 +15,21 @@ namespace ForgeConnector
     /// </summary>
     public class ForgeProjectileGlobal : GlobalProjectile
     {
+        public override bool InstancePerEntity => true;
+
+        private ForgeLabTelemetryContext _telemetryContext;
+
         public override bool AppliesToEntity(Projectile entity, bool lateInstantiation)
         {
             return entity.ModProjectile is ForgeTemplateProjectile;
+        }
+
+        public override void OnSpawn(Projectile projectile, IEntitySource source)
+        {
+            if (projectile.ModProjectile is not ForgeTemplateProjectile template)
+                return;
+
+            _telemetryContext = ForgeLabTelemetry.GetProjectileContext(template.SlotIndex);
         }
 
         // -----------------------------------------------------------
@@ -84,6 +98,59 @@ namespace ForgeConnector
                     // Vanilla AI or aiStyle-driven behavior handles these modes.
                     break;
             }
+        }
+
+        public override void OnHitNPC(Projectile projectile, NPC target, NPC.HitInfo hit, int damageDone)
+        {
+            if (_telemetryContext == null || !_telemetryContext.SupportsRuntimeLabTelemetry)
+                return;
+
+            int stackCount = ForgeLabTelemetry.IncrementTargetStack(_telemetryContext, target);
+            string targetId = $"npc:{target.whoAmI}";
+
+            if (stackCount >= 3)
+            {
+                SpawnStormCashout(projectile, target, damageDone);
+                ForgeLabTelemetry.Emit(
+                    _telemetryContext,
+                    "cashout_triggered",
+                    targetId: targetId,
+                    stackCount: stackCount,
+                    fxMarker: "storm_cashout_flash",
+                    audioMarker: "storm_cashout_chime");
+                ForgeLabTelemetry.ResetTargetStack(_telemetryContext, target.whoAmI);
+                return;
+            }
+
+            ForgeLabTelemetry.Emit(
+                _telemetryContext,
+                "escalate_triggered",
+                targetId: targetId,
+                stackCount: stackCount,
+                fxMarker: "storm_mark_flash",
+                audioMarker: "storm_mark_ping");
+        }
+
+        private static void SpawnStormCashout(Projectile projectile, NPC target, int damageDone)
+        {
+            if (projectile.owner < 0 || projectile.owner >= Main.maxPlayers)
+                return;
+
+            if (Main.netMode == NetmodeID.MultiplayerClient && projectile.owner != Main.myPlayer)
+                return;
+
+            Vector2 spawnPos = target.Center + new Vector2(0f, -320f);
+            Vector2 velocity = new Vector2(0f, 16f);
+            int cashoutDamage = Math.Max(1, (int)(damageDone * 1.5f));
+
+            Projectile.NewProjectile(
+                projectile.GetSource_FromThis(),
+                spawnPos,
+                velocity,
+                ProjectileID.Starfury,
+                cashoutDamage,
+                projectile.knockBack,
+                projectile.owner);
         }
 
         private static void RunMinionFollowerAI(Projectile projectile, ForgeProjectileData data)

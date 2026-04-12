@@ -2,11 +2,65 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from langchain_core.prompts import ChatPromptTemplate
 
 from architect.models import BUFF_ID_CHOICES
 
 _BUFF_ID_ENUM_TEXT = ", ".join(BUFF_ID_CHOICES)
+
+PACKAGE_PRIMARY_FIELDS = (
+    "mechanics.combat_package",
+    "mechanics.delivery_style",
+    "mechanics.payoff_rate",
+    "presentation.fx_profile",
+)
+SUPPORTED_COMBAT_PACKAGES = ("storm_brand", "orbit_furnace", "frost_shatter")
+PACKAGE_FX_PROFILE_MAP = {
+    "storm_brand": "celestial_shock",
+    "orbit_furnace": "ember_forge",
+    "frost_shatter": "glacial_burst",
+}
+PHASE_1_PACKAGE_SUPPORT_SCOPE = ('content_type="Weapon"', 'sub_type="Staff"')
+PACKAGE_FIRST_CONTENT_TYPE = "Weapon"
+PACKAGE_FIRST_SUB_TYPE = "Staff"
+LEGACY_FALLBACK_FIELDS = (
+    "mechanics.shot_style",
+    "mechanics.custom_projectile",
+    "mechanics.shoot_projectile",
+)
+LegacyFallbackMarkerLiteral = Literal["homage", "simple_fallback"]
+UNSUPPORTED_FAMILY_FALLBACK_TOKENS = (
+    "unsupported weapon families",
+    "Weapon",
+    "Staff",
+    "legacy projectile fields",
+    "combat packages",
+)
+LEGACY_HOMAGE_PROJECTILE_TOKENS = (
+    "ProjectileID.*",
+    "legacy projectile path",
+    "explicit vanilla homage weapons",
+)
+UNSUPPORTED_FAMILY_FALLBACK_GUIDANCE = (
+    "For unsupported weapon families outside that phase-1 `Weapon` + `Staff` "
+    "surface, use the legacy projectile fields instead of combat packages."
+)
+LEGACY_HOMAGE_PROJECTILE_GUIDANCE = (
+    "Within the legacy projectile path, raw `ProjectileID.*` is the primary "
+    "path ONLY for explicit vanilla homage weapons."
+)
+
+_PACKAGE_PRIMARY_FIELDS_TEXT = ", ".join(
+    f"`{field}`" for field in PACKAGE_PRIMARY_FIELDS
+)
+_SUPPORTED_COMBAT_PACKAGES_TEXT = ", ".join(
+    f"`{package_key}`" for package_key in SUPPORTED_COMBAT_PACKAGES
+)
+_PHASE_1_PACKAGE_SUPPORT_SCOPE_TEXT = " and ".join(
+    f"`{token}`" for token in PHASE_1_PACKAGE_SUPPORT_SCOPE
+)
 
 SYSTEM_PROMPT = f"""\
 You are an expert Terraria weapon designer.
@@ -23,16 +77,36 @@ Staff, Wand, Tome, Spellbook, Gun, Rifle, Pistol, Shotgun, Launcher, Cannon,
 Spear, Lance, Axe, Pickaxe, Hammer, Hamaxe.
 
 CRITICAL — structured enum fields:
+- phase-1 package support is currently limited to
+  {_PHASE_1_PACKAGE_SUPPORT_SCOPE_TEXT}.
+- Only within that phase-1 `Weapon` + `Staff` surface is
+  `{PACKAGE_PRIMARY_FIELDS[0]}` the primary authoring path for original or
+  non-homage weapons.
+- On that supported `Weapon` + `Staff` surface, legacy-only projectile fields
+  are a losing fallback unless the concept is explicitly marked as homage or
+  simple fallback.
+- {UNSUPPORTED_FAMILY_FALLBACK_GUIDANCE}
+- Supported `{PACKAGE_PRIMARY_FIELDS[0]}` values:
+  {_SUPPORTED_COMBAT_PACKAGES_TEXT}.
+- When `{PACKAGE_PRIMARY_FIELDS[0]}` is set, also set the bounded support
+  fields: `{PACKAGE_PRIMARY_FIELDS[1]}` = `direct`,
+  `{PACKAGE_PRIMARY_FIELDS[2]}` = `fast` or `medium`, and
+  `{PACKAGE_PRIMARY_FIELDS[3]}` = `celestial_shock`, `ember_forge`, or
+  `glacial_burst`.
 - `mechanics.on_hit_buff` must be EXACTLY one of these values or null:
   {_BUFF_ID_ENUM_TEXT}.
   Do NOT put prose, descriptions, or multiple effects here — only ONE enum
   value from the list above, or null if no on-hit buff applies.
 - `mechanics.buff_id` follows the same rule as on_hit_buff.
-- `mechanics.shoot_projectile` must be a valid ProjectileID.* constant
-  (e.g. ProjectileID.BallofFire, ProjectileID.FrostBoltSword) or null.
-  Do NOT invent names. If unsure, set to null.
 - `mechanics.ammo_id` must be a valid AmmoID.* constant or null.
-- `mechanics.shot_style` controls projectile behavior. Must be one of:
+- {LEGACY_HOMAGE_PROJECTILE_GUIDANCE}
+- `{LEGACY_FALLBACK_FIELDS[0]}` is a legacy fallback field, not the primary
+  authoring path.
+- `{LEGACY_FALLBACK_FIELDS[1]}` is a legacy fallback field, not the primary
+  authoring path.
+- `{LEGACY_FALLBACK_FIELDS[2]}` is an internal compatibility field and legacy
+  fallback, not the primary authoring path.
+- If you must use the legacy fields, `mechanics.shot_style` must be one of:
   "direct" (default — straight-line fire toward cursor),
   "sky_strike" (projectiles SPAWN ABOVE THE SCREEN and fall DOWN toward the
     cursor position — like Starfury/Star Wrath. Use when the description says
@@ -58,10 +132,9 @@ CRITICAL — structured enum fields:
     sky_strike = projectiles come FROM ABOVE (spawn point is high in the sky).
     chain_lightning = projectile BOUNCES BETWEEN NPCs on the ground.
     Both can involve lightning visually, but the MECHANIC is completely different.
-  When shot_style is "sky_strike", set shoot_projectile to ProjectileID.StarWrath
-  or ProjectileID.Starfury. For other non-direct styles, set shoot_projectile
-  to null AND set custom_projectile to false — the shot_style template already
-  includes the appropriate ModProjectile class.
+- If using legacy `mechanics.shoot_projectile`, it must be a valid
+  `ProjectileID.*` constant (e.g. `ProjectileID.BallofFire`) or null. Do NOT
+  invent names. If unsure, set it to null.
 - `mechanics.custom_projectile` must ONLY be set to true when shot_style is
   "direct" AND the user explicitly wants a custom projectile sprite. If
   shot_style is ANY non-direct value (sky_strike, homing, boomerang, orbit,
@@ -82,7 +155,9 @@ UseTime range: {use_time_min}-{use_time_max}
 
 
 def build_prompt(sub_type: str = "Sword") -> ChatPromptTemplate:
-    return ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("human", HUMAN_PROMPT),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", SYSTEM_PROMPT),
+            ("human", HUMAN_PROMPT),
+        ]
+    )

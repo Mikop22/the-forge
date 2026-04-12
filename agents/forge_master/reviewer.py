@@ -36,9 +36,7 @@ class ReviewIssue(BaseModel):
         "'missing_buff', 'wrong_damage_class', 'stats_mismatch', "
         "'projectile_logic', 'runtime_crash'."
     )
-    description: str = Field(
-        description="Human-readable explanation of the issue."
-    )
+    description: str = Field(description="Human-readable explanation of the issue.")
     suggested_fix: str = Field(
         description="Concrete code-level suggestion to resolve the issue."
     )
@@ -55,9 +53,7 @@ class ReviewOutput(BaseModel):
         default_factory=list,
         description="All issues found, ordered by severity (critical first).",
     )
-    summary: str = Field(
-        description="One-paragraph summary of the review verdict."
-    )
+    summary: str = Field(description="One-paragraph summary of the review verdict.")
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +69,32 @@ errors — assume the code compiles.  You care about **game-logic correctness**.
 
 ## What to check
 
-### 1. shot_style implementation
-Each shot_style requires specific patterns.  Verify these are present:
+### 1. combat_package / resolved_combat implementation
+If the manifest includes a combat package, `resolved_combat` is required and is
+the source of truth for combat behavior. Use `mechanics.combat_package` as the human-readable package label that should match `resolved_combat.package_key`.
+Check `resolved_combat.package_key`, `resolved_combat.delivery_module`,
+`resolved_combat.combo_module`, `resolved_combat.finisher_module`, and
+`resolved_combat.presentation_module` explicitly when present. Those resolved
+fields win over any freeform interpretation.
+For the phase-1 packages, verify the code reflects the package semantics:
+
+- **`storm_brand`**: `delivery_module` seed trigger exists, `combo_module`
+  escalate state is represented, `finisher_module` finisher trigger is
+  reachable, the state resets or consumes correctly, and
+  `presentation_module` escalates on finisher.
+- **`orbit_furnace`**: `delivery_module` orbit/heat trigger exists,
+  `combo_module` escalate state is represented, `finisher_module` furnace
+  payoff is reachable, the state resets or consumes correctly, and
+  `presentation_module` escalates on finisher.
+- **`frost_shatter`**: `delivery_module` chill/mark trigger exists,
+  `combo_module` escalate state is represented, `finisher_module` shatter
+  payoff is reachable, the state resets or consumes correctly, and
+  `presentation_module` escalates on finisher.
+
+### 2. shot_style implementation
+If the manifest does not include a combat package, apply the legacy
+`shot_style` rules below. Each shot_style requires specific patterns. Verify
+these are present:
 
 - **"direct"**: Item.shoot is set, basic Shoot() or no override needed.
 - **"channeled"**: Item.channel = true, Item.noUseGraphic = true,
@@ -95,32 +115,32 @@ Each shot_style requires specific patterns.  Verify these are present:
 - **"chain_lightning"**: ModProjectile OnHitNPC spawns a new projectile aimed
   at the nearest OTHER NPC, with a max chain count tracked via ai[] slots.
 
-### 2. Manifest stats reflected in SetDefaults
+### 3. Manifest stats reflected in SetDefaults
 - damage, knockBack, useTime / useAnimation, crit, autoReuse, rare should
   match or be close to the manifest values.
 
-### 3. DamageType correctness
+### 4. DamageType correctness
 - Staff/Wand/Tome/Spellbook → DamageClass.Magic
 - Bow/Gun/Repeater/Rifle/Pistol/Shotgun/Launcher/Cannon → DamageClass.Ranged
 - Sword/Broadsword/Shortsword/Spear/Lance/Axe/Pickaxe/Hammer/Hamaxe → DamageClass.Melee
 
-### 4. on_hit_buff / buff_id implementation
+### 5. on_hit_buff / buff_id implementation
 - If the manifest specifies on_hit_buff, there MUST be an OnHitNPC method
   that calls target.AddBuff() with the correct BuffID.
 
-### 5. Projectile presence
+### 6. Projectile presence
 - If custom_projectile is true OR shot_style is non-direct (except sky_strike),
   a ModProjectile class MUST exist in the code.
 - If shot_style is "sky_strike", there should NOT be a custom ModProjectile.
 
-### 6. Runtime safety
+### 7. Runtime safety
 - No infinite loops in AI().
 - No null reference risks (e.g. accessing Main.npc[i] without bounds check).
 - player.heldProj set for channeled weapons.
 - Projectile.timeLeft managed properly for channeled/orbit so projectile
   doesn't expire prematurely.
 
-### 7. Crafting recipe
+### 8. Crafting recipe
 - AddRecipes() should use CreateRecipe(), AddIngredient(), AddTile(), Register().
 - Ingredients and tile should match the manifest's crafting_material,
   crafting_cost, and crafting_tile.
@@ -154,10 +174,12 @@ Review the code above for game-logic correctness against the manifest."""
 
 def build_review_prompt() -> ChatPromptTemplate:
     """Build the ChatPromptTemplate for the weapon logic review."""
-    return ChatPromptTemplate.from_messages([
-        ("system", REVIEW_SYSTEM),
-        ("human", REVIEW_HUMAN),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", REVIEW_SYSTEM),
+            ("human", REVIEW_HUMAN),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +219,12 @@ Fix the issues above and return the complete corrected C# file."""
 
 def build_review_fix_prompt() -> ChatPromptTemplate:
     """Build the ChatPromptTemplate for fixing reviewer-identified issues."""
-    return ChatPromptTemplate.from_messages([
-        ("system", REVIEW_FIX_SYSTEM),
-        ("human", REVIEW_FIX_HUMAN),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", REVIEW_FIX_SYSTEM),
+            ("human", REVIEW_FIX_HUMAN),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -223,10 +247,14 @@ class WeaponReviewer:
 
     def __init__(self, model_name: str = "gpt-5.4") -> None:
         self._review_llm = ChatOpenAI(
-            model=model_name, timeout=300, reasoning_effort="high",
+            model=model_name,
+            timeout=300,
+            reasoning_effort="high",
         )
         self._fix_llm = ChatOpenAI(
-            model=model_name, timeout=300, reasoning_effort="high",
+            model=model_name,
+            timeout=300,
+            reasoning_effort="high",
         )
 
         # Omit strict= for compatibility — matches the policy in forge_master.py
@@ -238,11 +266,8 @@ class WeaponReviewer:
         )
 
         from langchain_core.output_parsers import StrOutputParser
-        self._fix_chain = (
-            build_review_fix_prompt()
-            | self._fix_llm
-            | StrOutputParser()
-        )
+
+        self._fix_chain = build_review_fix_prompt() | self._fix_llm | StrOutputParser()
 
     def review(
         self,
@@ -269,10 +294,12 @@ class WeaponReviewer:
         manifest_json = json.dumps(manifest, indent=2)
 
         for attempt in range(max_attempts):
-            review_result: ReviewOutput = self._review_chain.invoke({
-                "manifest_json": manifest_json,
-                "cs_code": cs_code,
-            })
+            review_result: ReviewOutput = self._review_chain.invoke(
+                {
+                    "manifest_json": manifest_json,
+                    "cs_code": cs_code,
+                }
+            )
 
             # If approved or only info-level issues, accept immediately
             if review_result.approved:
@@ -280,8 +307,7 @@ class WeaponReviewer:
 
             # Check if there are actionable issues (critical or warning)
             actionable = [
-                i for i in review_result.issues
-                if i.severity in ("critical", "warning")
+                i for i in review_result.issues if i.severity in ("critical", "warning")
             ]
 
             if not actionable:
@@ -296,19 +322,23 @@ class WeaponReviewer:
             issue_text = self._format_issues(actionable)
 
             # Attempt to fix
-            raw_fix = self._fix_chain.invoke({
-                "manifest_json": manifest_json,
-                "cs_code": cs_code,
-                "review_issues": issue_text,
-            })
+            raw_fix = self._fix_chain.invoke(
+                {
+                    "manifest_json": manifest_json,
+                    "cs_code": cs_code,
+                    "review_issues": issue_text,
+                }
+            )
 
             cs_code = _strip_fences(raw_fix)
 
         # Final review after last fix
-        final_review: ReviewOutput = self._review_chain.invoke({
-            "manifest_json": manifest_json,
-            "cs_code": cs_code,
-        })
+        final_review: ReviewOutput = self._review_chain.invoke(
+            {
+                "manifest_json": manifest_json,
+                "cs_code": cs_code,
+            }
+        )
 
         return cs_code, final_review
 

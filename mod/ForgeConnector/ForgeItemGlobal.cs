@@ -293,6 +293,13 @@ namespace ForgeConnector
             if (data == null)
                 return true;
 
+            ForgeLabTelemetryContext telemetryContext = ForgeLabTelemetry.GetItemContext(template.SlotIndex);
+            ForgeLabTelemetry.Emit(
+                telemetryContext,
+                "seed_triggered",
+                fxMarker: "storm_seed_cast",
+                audioMarker: "storm_seed_cast");
+
             if (string.Equals(data.ContentType, "Summon", StringComparison.OrdinalIgnoreCase))
             {
                 int buffType = ResolveSummonBuffType(data);
