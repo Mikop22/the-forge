@@ -44,6 +44,7 @@ class WorkshopRequest(BaseModel):
 
     action: Literal["variants", "bench", "try", "restore"] = "variants"
     session_id: str = ""
+    snapshot_id: int = 0
     bench_item_id: str | None = None
     variant_id: str | None = None
     directive: str | None = None

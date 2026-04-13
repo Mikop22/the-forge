@@ -618,6 +618,19 @@ def _handle_workshop_request(
     active_store = store or WORKSHOP_STORE
     allow_bootstrap = request.action == "variants"
     validation_session = _load_validation_workshop_session(request, active_store)
+    current_snapshot_id = int(validation_session.get("snapshot_id") or 0)
+    requested_snapshot_id = int(getattr(request, "snapshot_id", 0) or 0)
+    if current_snapshot_id > 0:
+        if requested_snapshot_id <= 0:
+            raise RuntimeError(
+                "stale workshop action missing snapshot_id "
+                f"(current: {current_snapshot_id})"
+            )
+        if requested_snapshot_id != current_snapshot_id:
+            raise RuntimeError(
+                "stale workshop action for snapshot "
+                f"{requested_snapshot_id} (current: {current_snapshot_id})"
+            )
     current_bench_id = str((validation_session.get("bench") or {}).get("item_id") or "").strip()
     requested_bench_id = str(request.bench_item_id or "").strip()
     if requested_bench_id and current_bench_id and requested_bench_id != current_bench_id:

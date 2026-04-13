@@ -57,10 +57,12 @@ func (s *sessionShellState) upsertEvent(kind sessionEventKind, message string) {
 
 func (m *model) appendFeedEvent(kind sessionEventKind, message string) {
 	m.sessionShell.appendEvent(kind, message)
+	m.persistSessionShellState()
 }
 
 func (m *model) upsertFeedEvent(kind sessionEventKind, message string) {
 	m.sessionShell.upsertEvent(kind, message)
+	m.persistSessionShellState()
 }
 
 func (s sessionShellState) renderEventRow(event sessionEvent) string {

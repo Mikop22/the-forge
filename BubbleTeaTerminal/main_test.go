@@ -84,6 +84,271 @@ func TestInitialModelStartsAtShellPrompt(t *testing.T) {
 	}
 }
 
+func TestInitialModelOmitsStandalonePromptFormInStartupView(t *testing.T) {
+	m := initialModel()
+
+	got := m.View()
+	if strings.Contains(got, "Describe your item") {
+		t.Fatalf("startup view = %q, want it to omit the legacy standalone prompt form from the main body", got)
+	}
+	if !strings.Contains(got, "Persistent Command Bar") {
+		t.Fatalf("startup view = %q, want the persistent command bar to remain the entry point", got)
+	}
+}
+
+func TestInitialModelHydratesSessionShellAndWorkshopStatusFromMirroredFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
+	}
+
+	sessionShellStatus := `{
+  "session_id": "sess-1",
+  "snapshot_id": 9,
+  "recent_events": [
+    {"kind": "prompt", "message": "Forge: Storm Brand"},
+    {"kind": "system", "message": "Forge progress 47%"}
+  ],
+  "pinned_notes": ["keep the cashout"]
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "session_shell_status.json"), []byte(sessionShellStatus), 0644); err != nil {
+		t.Fatalf("write session_shell_status.json: %v", err)
+	}
+
+	workshopStatus := `{
+  "session_id": "bench-storm-brand",
+  "bench": {
+    "item_id": "storm-brand",
+    "label": "Storm Brand",
+    "manifest": {
+      "type": "Weapon",
+      "sub_type": "Staff",
+      "crafting_station": "Mythril Anvil"
+    }
+  },
+  "shelf": [
+    {"variant_id": "storm-brand-v1", "label": "Heavier Shot"}
+  ],
+  "last_action": "ready"
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "workshop_status.json"), []byte(workshopStatus), 0644); err != nil {
+		t.Fatalf("write workshop_status.json: %v", err)
+	}
+
+	m := initialModel()
+
+	if got := len(m.sessionShell.events); got != 2 {
+		t.Fatalf("startup session events = %d, want 2 hydrated events from session_shell_status.json", got)
+	}
+	if got := m.sessionShell.events[0].Message; got != "Forge: Storm Brand" {
+		t.Fatalf("first startup session event = %q, want Forge: Storm Brand", got)
+	}
+	if got := m.sessionShell.events[1].Message; got != "Forge progress 47%" {
+		t.Fatalf("second startup session event = %q, want Forge progress 47%%", got)
+	}
+	if got := m.workshop.SessionID; got != "bench-storm-brand" {
+		t.Fatalf("startup workshop session = %q, want bench-storm-brand", got)
+	}
+	if got := m.workshop.Bench.Label; got != "Storm Brand" {
+		t.Fatalf("startup bench label = %q, want Storm Brand", got)
+	}
+	if got := len(m.workshop.Shelf); got != 1 {
+		t.Fatalf("startup shelf len = %d, want 1 hydrated shelf variant", got)
+	}
+	if got := m.workshop.Shelf[0].VariantID; got != "storm-brand-v1" {
+		t.Fatalf("startup shelf variant = %q, want storm-brand-v1", got)
+	}
+	if !m.hasActiveWorkshopBench() {
+		t.Fatal("startup model has no active workshop bench, want hydrated bench context")
+	}
+	if got := m.shellSuggestion(); got != "/bench <variant-id-or-number>" {
+		t.Fatalf("startup shell suggestion = %q, want /bench <variant-id-or-number>", got)
+	}
+
+	gotView := m.View()
+	if !strings.Contains(gotView, "bench: Storm Brand") {
+		t.Fatalf("startup shell view = %q, want top strip to surface hydrated bench context", gotView)
+	}
+	if !strings.Contains(gotView, "shelf: 1 variant") {
+		t.Fatalf("startup shell view = %q, want top strip to surface hydrated shelf context", gotView)
+	}
+}
+
+func TestInitialModelInitializesRuntimeFreshnessOnStartup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
+	}
+
+	heartbeat := []byte(`{"status":"listening","pid":` + strconv.Itoa(os.Getpid()) + `}`)
+	if err := os.WriteFile(filepath.Join(modSources, "forge_connector_alive.json"), heartbeat, 0644); err != nil {
+		t.Fatalf("write bridge heartbeat: %v", err)
+	}
+
+	m := initialModel()
+	if !m.bridgeAlive {
+		t.Fatal("startup bridgeAlive = false, want true from live bridge heartbeat")
+	}
+	if got := m.View(); !strings.Contains(got, "runtime online") {
+		t.Fatalf("startup shell view = %q, want runtime online when bridge heartbeat is live", got)
+	}
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("startup Init command = nil, want startup runtime freshness commands")
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("startup Init command returned %T, want tea.BatchMsg", msg)
+	}
+	if got := len(batch); got < 4 {
+		t.Fatalf("startup command count = %d, want runtime freshness command included with startup commands", got)
+	}
+}
+
+func TestFeedEventUpdatesPersistBackToSessionShellStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
+	}
+
+	initialStatus := `{
+  "session_id": "sess-1",
+  "snapshot_id": 9,
+  "recent_events": [
+    {"kind": "runtime", "message": "Forge progress: 47%"},
+    {"kind": "system", "message": "Bench ready"}
+  ],
+  "pinned_notes": ["keep the cashout"]
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "session_shell_status.json"), []byte(initialStatus), 0644); err != nil {
+		t.Fatalf("write session_shell_status.json: %v", err)
+	}
+
+	m := initialModel()
+	m.upsertFeedEvent(sessionEventKindRuntime, "Forge progress: 58%")
+	m.appendFeedEvent(sessionEventKindSystem, "Workshop action sent: bench")
+
+	raw, err := os.ReadFile(filepath.Join(modSources, "session_shell_status.json"))
+	if err != nil {
+		t.Fatalf("read session_shell_status.json: %v", err)
+	}
+
+	var payload struct {
+		SessionID    string   `json:"session_id"`
+		SnapshotID   int      `json:"snapshot_id"`
+		PinnedNotes  []string `json:"pinned_notes"`
+		RecentEvents []struct {
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+		} `json:"recent_events"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal session shell status: %v", err)
+	}
+
+	if payload.SessionID != "sess-1" {
+		t.Fatalf("session_id = %q, want sess-1", payload.SessionID)
+	}
+	if payload.SnapshotID != 9 {
+		t.Fatalf("snapshot_id = %d, want 9", payload.SnapshotID)
+	}
+	if len(payload.PinnedNotes) != 1 || payload.PinnedNotes[0] != "keep the cashout" {
+		t.Fatalf("pinned_notes = %#v, want keep the cashout", payload.PinnedNotes)
+	}
+	if got := len(payload.RecentEvents); got != 3 {
+		t.Fatalf("recent_events = %d, want 3", got)
+	}
+	if payload.RecentEvents[0].Message != "Forge progress: 58%" {
+		t.Fatalf("updated runtime event = %q, want Forge progress: 58%%", payload.RecentEvents[0].Message)
+	}
+	if payload.RecentEvents[2].Message != "Workshop action sent: bench" {
+		t.Fatalf("appended event = %q, want Workshop action sent: bench", payload.RecentEvents[2].Message)
+	}
+}
+
+func TestWorkshopRequestPayloadCarriesSnapshotIDFromWorkshopStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
+	}
+
+	workshopStatus := `{
+  "session_id": "sess-1",
+  "snapshot_id": 7,
+  "bench": {
+    "item_id": "storm-brand",
+    "label": "Storm Brand",
+    "manifest": {"type": "Weapon"}
+  },
+  "shelf": [
+    {"variant_id": "storm-brand-v1", "label": "Heavier Shot"}
+  ],
+  "last_action": "ready"
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "workshop_status.json"), []byte(workshopStatus), 0644); err != nil {
+		t.Fatalf("write workshop_status.json: %v", err)
+	}
+
+	m := initialModel()
+	m.state = screenStaging
+	m.commandMode = true
+	m.commandInput.SetValue("/bench 1")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if next.commandMode {
+		t.Fatal("command mode still enabled after sending workshop request")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(modSources, "workshop_request.json"))
+	if err != nil {
+		t.Fatalf("read workshop_request.json: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal workshop request: %v", err)
+	}
+
+	if got := payload["session_id"]; got != "sess-1" {
+		t.Fatalf("session_id = %#v, want sess-1", got)
+	}
+	if got := payload["bench_item_id"]; got != "storm-brand" {
+		t.Fatalf("bench_item_id = %#v, want storm-brand", got)
+	}
+	if got := payload["snapshot_id"]; got != float64(7) {
+		t.Fatalf("snapshot_id = %#v, want 7", got)
+	}
+	if got := payload["variant_id"]; got != "storm-brand-v1" {
+		t.Fatalf("variant_id = %#v, want storm-brand-v1", got)
+	}
+}
+
 func TestSessionShellRendersThreeRegions(t *testing.T) {
 	m := initialModel()
 	m.state = screenInput
@@ -132,6 +397,50 @@ func TestInputShell(t *testing.T) {
 	}
 	if got := next.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
 		t.Fatalf("shell view = %q, want persistent shell chrome", got)
+	}
+}
+
+func TestInputShellTryUsesActiveBench(t *testing.T) {
+	home := t.TempDir()
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("HOME", home)
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	m := initialModel()
+	m.workshop.SessionID = "bench-storm-brand"
+	m.workshop.SnapshotID = 7
+	m.workshop.Bench = workshopBench{
+		ItemID: "storm-brand",
+		Label:  "Storm Brand",
+		Manifest: map[string]interface{}{
+			"type": "Weapon",
+		},
+	}
+	m.commandInput.SetValue("/try")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+
+	if next.state != screenStaging {
+		t.Fatalf("state after /try = %v, want %v", next.state, screenStaging)
+	}
+	if !next.injecting {
+		t.Fatal("injecting = false, want true after /try")
+	}
+
+	data, err := os.ReadFile(filepath.Join(modSources, "forge_inject.json"))
+	if err != nil {
+		t.Fatalf("read forge_inject.json: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("unmarshal forge_inject.json: %v", err)
+	}
+	if got := payload["item_name"]; got != "Storm Brand" {
+		t.Fatalf("item_name = %#v, want Storm Brand", got)
 	}
 }
 
@@ -265,11 +574,11 @@ func TestAdjustPreviewStatMutatesManifest(t *testing.T) {
 	m := initialModel()
 	m.forgeManifest = map[string]interface{}{
 		"stats": map[string]interface{}{
-			"damage":     float64(12),
-			"use_time":   float64(20),
-			"knockback":  float64(4.5),
+			"damage":      float64(12),
+			"use_time":    float64(20),
+			"knockback":   float64(4.5),
 			"crit_chance": float64(4),
-			"rarity":     "ItemRarityID.White",
+			"rarity":      "ItemRarityID.White",
 		},
 	}
 	item := craftedItem{}

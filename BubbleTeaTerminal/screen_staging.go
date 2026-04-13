@@ -54,14 +54,7 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workshop.Runtime.BridgeAlive = msg.alive
 		return m, nil
 	case runtimeSummaryMsg:
-		m.workshop.Runtime = msg.banner
-		m.bridgeAlive = msg.banner.BridgeAlive
-		m.injectStatus = msg.banner.LastInjectStatus
-		if msg.banner.LastInjectStatus == "" {
-			m.injectDetail = ""
-		} else {
-			m.injectDetail = msg.banner.LastRuntimeNote
-		}
+		m.applyRuntimeSummaryBanner(msg.banner)
 		return m, runtimeSummaryCmd()
 	case ipc.PollConnectorStatusMsg:
 		const maxAttempts = 60 // 30 seconds at 500ms intervals
@@ -201,31 +194,19 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if route.Action == commandActionTry {
-					if m.workshop.Bench.Manifest == nil {
-						m.workshopNotice = "Bench is empty."
-						return m, nil
-					}
-					m.injecting = true
-					m.injectErr = ""
-					m.injectStatus = ""
-					m.injectDetail = ""
-					m.appendFeedEvent(sessionEventKindSystem, "Workshop try: "+m.workshop.Bench.Label)
-					_ = os.Remove(filepath.Join(modsources.Dir(), "forge_connector_status.json"))
-					if err := ipc.WriteInjectFile(
-						m.workshop.Bench.Manifest,
-						m.workshop.Bench.Label,
-						m.workshop.Bench.SpritePath,
-						m.workshop.Bench.ProjectilePath,
-					); err != nil {
-						m.injecting = false
-						m.workshopNotice = "Bench try failed: " + err.Error()
-						return m, nil
-					}
-					m.workshopNotice = "Bench injected into Terraria."
-					return m, ipc.PollConnectorStatusCmd(0)
+					return m.tryCurrentBench()
 				}
 
-				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID)
+				if isLocalShellInfoAction(route.Action) {
+					response := m.shellInfoResponse(route)
+					if response != "" {
+						m.appendFeedEvent(sessionEventKindSystem, response)
+						m.workshopNotice = response
+					}
+					return m, nil
+				}
+
+				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID, m.workshop.SnapshotID)
 				if err := ipc.WriteWorkshopRequest(payload); err != nil {
 					m.workshopNotice = "Director request failed: " + err.Error()
 					return m, nil
@@ -302,6 +283,32 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) tryCurrentBench() (tea.Model, tea.Cmd) {
+	if m.workshop.Bench.Manifest == nil {
+		m.workshopNotice = "Bench is empty."
+		return m, nil
+	}
+	m.state = screenStaging
+	m.injecting = true
+	m.injectErr = ""
+	m.injectStatus = ""
+	m.injectDetail = ""
+	m.appendFeedEvent(sessionEventKindSystem, "Workshop try: "+m.workshop.Bench.Label)
+	_ = os.Remove(filepath.Join(modsources.Dir(), "forge_connector_status.json"))
+	if err := ipc.WriteInjectFile(
+		m.workshop.Bench.Manifest,
+		m.workshop.Bench.Label,
+		m.workshop.Bench.SpritePath,
+		m.workshop.Bench.ProjectilePath,
+	); err != nil {
+		m.injecting = false
+		m.workshopNotice = "Bench try failed: " + err.Error()
+		return m, nil
+	}
+	m.workshopNotice = "Bench injected into Terraria."
+	return m, ipc.PollConnectorStatusCmd(0)
 }
 
 func (m model) stagingView() string {

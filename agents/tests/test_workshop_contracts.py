@@ -6,12 +6,14 @@ def test_workshop_request_supports_variants_action() -> None:
         {
             "action": "variants",
             "session_id": "sess-1",
+            "snapshot_id": 11,
             "bench_item_id": "storm-brand",
             "directive": "make the projectile feel heavier",
         }
     )
 
     assert req.action == "variants"
+    assert req.snapshot_id == 11
     assert req.directive == "make the projectile feel heavier"
 
 

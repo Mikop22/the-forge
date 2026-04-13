@@ -84,6 +84,8 @@ func TestWorkshopActionsAddFeedEntry(t *testing.T) {
 }
 
 func TestConnectorResultsAddFeedEntry(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+
 	m := initialModel()
 	m.state = screenStaging
 	m.injecting = true

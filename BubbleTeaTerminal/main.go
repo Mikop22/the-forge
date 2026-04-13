@@ -58,6 +58,10 @@ func initialModel() model {
 	wizardList.DisableQuitKeybindings()
 	wizardList.SetHeight(12)
 
+	workshop := loadWorkshopState()
+	bridgeAlive := ipc.ReadBridgeHeartbeat()
+	workshop.Runtime.BridgeAlive = bridgeAlive
+
 	return model{
 		state:        screenInput,
 		textInput:    ti,
@@ -66,8 +70,9 @@ func initialModel() model {
 		modeList:     modeList,
 		wizardList:   wizardList,
 		spinner:      s,
-		sessionShell: newSessionShellState(),
-		workshop:     newWorkshopState(),
+		sessionShell: loadSessionShellState(),
+		workshop:     workshop,
+		bridgeAlive:  bridgeAlive,
 	}
 }
 
@@ -75,6 +80,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		animTickCmd(),
+		runtimeSummaryNowCmd(),
 		tea.SetWindowTitle("The Forge"),
 	)
 }
@@ -98,6 +104,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case animTickMsg:
 		m.animTick++
 		return m, animTickCmd()
+	case runtimeSummaryMsg:
+		m.applyRuntimeSummaryBanner(msg.banner)
+		return m, runtimeSummaryCmd()
 	}
 
 	switch m.state {

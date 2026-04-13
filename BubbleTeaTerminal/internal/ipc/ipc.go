@@ -67,6 +67,7 @@ type WorkshopVariant struct {
 
 type WorkshopStatus struct {
 	SessionID  string
+	SnapshotID int
 	Bench      WorkshopBench
 	Shelf      []WorkshopVariant
 	LastAction string
@@ -274,6 +275,9 @@ func ReadWorkshopStatus() WorkshopStatus {
 
 	status := WorkshopStatus{}
 	status.SessionID, _ = payload["session_id"].(string)
+	if snapshotID, ok := payload["snapshot_id"].(float64); ok {
+		status.SnapshotID = int(snapshotID)
+	}
 	status.LastAction, _ = payload["last_action"].(string)
 	status.Error, _ = payload["error"].(string)
 

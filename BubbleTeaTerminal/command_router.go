@@ -14,6 +14,10 @@ const (
 	commandActionBench       commandAction = "bench"
 	commandActionRestore     commandAction = "restore"
 	commandActionTry         commandAction = "try"
+	commandActionStatus      commandAction = "status"
+	commandActionMemory      commandAction = "memory"
+	commandActionWhatChanged commandAction = "what_changed"
+	commandActionHelp        commandAction = "help"
 	commandActionUnsupported commandAction = "unsupported"
 )
 
@@ -84,8 +88,67 @@ func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVar
 			return commandRoute{Action: commandActionUnsupported, Directive: arg}
 		}
 		return commandRoute{Action: commandActionTry}
+	case "status":
+		if strings.TrimSpace(arg) != "" {
+			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+		}
+		return commandRoute{Action: commandActionStatus}
+	case "memory":
+		if strings.TrimSpace(arg) != "" {
+			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+		}
+		return commandRoute{Action: commandActionMemory}
+	case "what-changed":
+		if strings.TrimSpace(arg) != "" {
+			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+		}
+		return commandRoute{Action: commandActionWhatChanged}
+	case "help":
+		if strings.TrimSpace(arg) != "" {
+			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+		}
+		return commandRoute{Action: commandActionHelp}
 	default:
 		return commandRoute{Action: commandActionUnsupported, Directive: arg}
+	}
+}
+
+func isLocalShellInfoAction(action commandAction) bool {
+	switch action {
+	case commandActionStatus, commandActionMemory, commandActionWhatChanged, commandActionHelp:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m model) shellInfoResponse(route commandRoute) string {
+	switch route.Action {
+	case commandActionStatus:
+		bench := strings.TrimSpace(m.workshop.Bench.Label)
+		if bench == "" {
+			bench = "none"
+		}
+		runtime := "runtime offline"
+		if m.workshop.Runtime.BridgeAlive || m.bridgeAlive {
+			runtime = "runtime online"
+		}
+		return "Status: bench " + bench + "; " + runtime
+	case commandActionMemory:
+		notes := loadPinnedMemoryNotes()
+		if len(notes) == 0 {
+			return "Memory: no pinned notes"
+		}
+		return "Memory: " + strings.Join(notes, "; ")
+	case commandActionWhatChanged:
+		if !m.hasActiveWorkshopBench() {
+			return "What changed: no active bench"
+		}
+		return "What changed: bench " + m.workshop.Bench.Label + "; shelf variants " + strconv.Itoa(len(m.workshop.Shelf))
+	case commandActionHelp:
+		return "Commands: /forge, /variants, /bench, /try, /restore, /status, /memory, /what-changed, /help"
+	default:
+		return ""
 	}
 }
 
@@ -110,11 +173,12 @@ func normalizeRestoreTarget(raw string) (string, bool) {
 	}
 }
 
-func buildWorkshopRequestPayloadFromRoute(route commandRoute, sessionID, benchItemID string) map[string]interface{} {
+func buildWorkshopRequestPayloadFromRoute(route commandRoute, sessionID, benchItemID string, snapshotID int) map[string]interface{} {
 	payload := map[string]interface{}{
 		"action":        string(route.Action),
 		"session_id":    sessionID,
 		"bench_item_id": benchItemID,
+		"snapshot_id":   snapshotID,
 	}
 
 	switch route.Action {

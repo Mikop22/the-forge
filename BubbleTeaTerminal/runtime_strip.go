@@ -12,11 +12,32 @@ const runtimeSummaryFreshnessWindow = 10 * time.Second
 
 func runtimeSummaryCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		summary := ipc.ReadRuntimeSummary()
-		status, detail := ipc.ReadConnectorStatusPayload()
-		banner := resolveRuntimeBanner(summary, ipc.ReadBridgeHeartbeat(), status, detail, time.Now().UTC())
-		return runtimeSummaryMsg{banner: banner}
+		return readRuntimeSummaryMsg(time.Now().UTC())
 	})
+}
+
+func runtimeSummaryNowCmd() tea.Cmd {
+	return func() tea.Msg {
+		return readRuntimeSummaryMsg(time.Now().UTC())
+	}
+}
+
+func readRuntimeSummaryMsg(now time.Time) tea.Msg {
+	summary := ipc.ReadRuntimeSummary()
+	status, detail := ipc.ReadConnectorStatusPayload()
+	banner := resolveRuntimeBanner(summary, ipc.ReadBridgeHeartbeat(), status, detail, now)
+	return runtimeSummaryMsg{banner: banner}
+}
+
+func (m *model) applyRuntimeSummaryBanner(banner workshopRuntimeBanner) {
+	m.workshop.Runtime = banner
+	m.bridgeAlive = banner.BridgeAlive
+	m.injectStatus = banner.LastInjectStatus
+	if banner.LastInjectStatus == "" {
+		m.injectDetail = ""
+	} else {
+		m.injectDetail = banner.LastRuntimeNote
+	}
 }
 
 func resolveRuntimeBanner(summary ipc.RuntimeSummary, heartbeatAlive bool, status string, detail string, now time.Time) workshopRuntimeBanner {

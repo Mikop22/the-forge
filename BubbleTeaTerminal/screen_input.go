@@ -39,7 +39,7 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.errMsg = "No active bench."
 					return m, nil
 				}
-				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID)
+				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID, m.workshop.SnapshotID)
 				if err := ipc.WriteWorkshopRequest(payload); err != nil {
 					m.errMsg = "Director request failed: " + err.Error()
 					return m, nil
@@ -49,7 +49,16 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commandMode = false
 				return m, ipc.PollWorkshopStatusCmd(0)
 			case commandActionTry:
-				m.errMsg = "Use the workshop command bar for try."
+				if !m.hasActiveWorkshopBench() {
+					m.errMsg = "No active bench."
+					return m, nil
+				}
+				return m.tryCurrentBench()
+			case commandActionStatus, commandActionMemory, commandActionWhatChanged, commandActionHelp:
+				response := m.shellInfoResponse(route)
+				if response != "" {
+					m.appendFeedEvent(sessionEventKindSystem, response)
+				}
 				return m, nil
 			case commandActionUnsupported:
 				if isEmptyForgeCommand(prompt) {
@@ -78,18 +87,14 @@ func (m model) inputView() string {
 	})
 	lines := []string{
 		styles.TitleRune.Render("The Forge"),
-		styles.Subtitle.Render("Describe your item"),
+		styles.Subtitle.Render("Choose your forge path."),
 	}
 	if selection != "" {
 		lines = append(lines, styles.Meta.Render(selection))
 	}
-	lines = append(lines,
-		"",
-		styles.PromptInput.Render(m.commandInput.View()),
-	)
 	if m.errMsg != "" {
 		lines = append(lines, styles.Error.Render(m.errMsg))
 	}
-	lines = append(lines, "", styles.Hint.Render("Enter forge  •  Esc manual mode"))
+	lines = append(lines, "", styles.Hint.Render("Use the command bar below  •  Esc manual mode"))
 	return strings.Join(lines, "\n")
 }

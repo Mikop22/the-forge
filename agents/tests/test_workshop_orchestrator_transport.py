@@ -296,6 +296,113 @@ class WorkshopTransportTests(unittest.TestCase):
         finally:
             loop.close()
 
+    def test_workshop_request_rejects_stale_snapshot_id_even_for_same_bench(self) -> None:
+        loop = asyncio.new_event_loop()
+        handler = orchestrator._RequestHandler(loop)
+        try:
+            with TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                workshop_status = root / "workshop_status.json"
+                session_shell_status = root / "session_shell_status.json"
+                store = WorkshopSessionStore(root / ".forge_workshop_sessions")
+                store.save(
+                    {
+                        "session_id": "sess-1",
+                        "snapshot_id": 7,
+                        "bench": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "baseline": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "last_live": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "shelf": [{"variant_id": "v1", "label": "Heavier Shot"}],
+                        "session_shell": {
+                            "session_id": "sess-1",
+                            "snapshot_id": 7,
+                            "recent_events": [],
+                            "pinned_notes": ["keep the cashout"],
+                        },
+                    }
+                )
+
+                with (
+                    mock.patch.object(orchestrator, "WORKSHOP_STATUS_FILE", workshop_status),
+                    mock.patch.object(orchestrator, "SESSION_SHELL_STATUS_FILE", session_shell_status),
+                    mock.patch.object(orchestrator, "WORKSHOP_STORE", store),
+                ):
+                    loop.run_until_complete(
+                        handler._run_safe(
+                            orchestrator.WORKSHOP_REQUEST_FILE,
+                            {
+                                "action": "bench",
+                                "session_id": "sess-1",
+                                "snapshot_id": 2,
+                                "bench_item_id": "storm-brand",
+                                "variant_id": "v1",
+                            },
+                        )
+                    )
+
+                payload = json.loads(workshop_status.read_text(encoding="utf-8"))
+                shell_payload = json.loads(session_shell_status.read_text(encoding="utf-8"))
+                self.assertEqual(payload["last_action"], "error")
+                self.assertIn("stale workshop action", payload["error"])
+                self.assertEqual(payload["snapshot_id"], shell_payload["snapshot_id"])
+                self.assertEqual(payload["snapshot_id"], 8)
+                self.assertEqual(store.load("sess-1")["snapshot_id"], 8)
+        finally:
+            loop.close()
+
+    def test_workshop_request_rejects_missing_snapshot_id_for_active_session(self) -> None:
+        loop = asyncio.new_event_loop()
+        handler = orchestrator._RequestHandler(loop)
+        try:
+            with TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                workshop_status = root / "workshop_status.json"
+                session_shell_status = root / "session_shell_status.json"
+                store = WorkshopSessionStore(root / ".forge_workshop_sessions")
+                store.save(
+                    {
+                        "session_id": "sess-1",
+                        "snapshot_id": 7,
+                        "bench": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "baseline": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "last_live": {"item_id": "storm-brand", "label": "Storm Brand"},
+                        "shelf": [{"variant_id": "v1", "label": "Heavier Shot"}],
+                        "session_shell": {
+                            "session_id": "sess-1",
+                            "snapshot_id": 7,
+                            "recent_events": [],
+                            "pinned_notes": ["keep the cashout"],
+                        },
+                    }
+                )
+
+                with (
+                    mock.patch.object(orchestrator, "WORKSHOP_STATUS_FILE", workshop_status),
+                    mock.patch.object(orchestrator, "SESSION_SHELL_STATUS_FILE", session_shell_status),
+                    mock.patch.object(orchestrator, "WORKSHOP_STORE", store),
+                ):
+                    loop.run_until_complete(
+                        handler._run_safe(
+                            orchestrator.WORKSHOP_REQUEST_FILE,
+                            {
+                                "action": "bench",
+                                "session_id": "sess-1",
+                                "bench_item_id": "storm-brand",
+                                "variant_id": "v1",
+                            },
+                        )
+                    )
+
+                payload = json.loads(workshop_status.read_text(encoding="utf-8"))
+                shell_payload = json.loads(session_shell_status.read_text(encoding="utf-8"))
+                self.assertEqual(payload["last_action"], "error")
+                self.assertIn("missing snapshot", payload["error"])
+                self.assertEqual(payload["snapshot_id"], shell_payload["snapshot_id"])
+                self.assertEqual(payload["snapshot_id"], 8)
+                self.assertEqual(store.load("sess-1")["snapshot_id"], 8)
+        finally:
+            loop.close()
+
     def test_stale_request_without_active_session_does_not_create_one(self) -> None:
         loop = asyncio.new_event_loop()
         handler = orchestrator._RequestHandler(loop)

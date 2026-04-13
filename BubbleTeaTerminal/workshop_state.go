@@ -43,16 +43,23 @@ type workshopRuntimeBanner struct {
 }
 
 type workshopState struct {
-	SessionID string
-	Bench     workshopBench
-	Shelf     []workshopVariant
-	Runtime   workshopRuntimeBanner
+	SessionID  string
+	SnapshotID int
+	Bench      workshopBench
+	Shelf      []workshopVariant
+	Runtime    workshopRuntimeBanner
 }
 
 func newWorkshopState() workshopState {
 	return workshopState{
 		Shelf: []workshopVariant{},
 	}
+}
+
+func loadWorkshopState() workshopState {
+	ws := newWorkshopState()
+	ws.ApplyStatus(ipc.ReadWorkshopStatus())
+	return ws
 }
 
 func workshopIDFromLabel(label string) string {
@@ -141,6 +148,7 @@ func workshopBenchHasRenderableContent(bench workshopBench) bool {
 
 func (ws *workshopState) ApplyStatus(status ipc.WorkshopStatus) {
 	ws.SessionID = status.SessionID
+	ws.SnapshotID = status.SnapshotID
 	ws.Bench = workshopBenchFromStatus(status.Bench)
 	ws.Shelf = make([]workshopVariant, 0, len(status.Shelf))
 	for _, variant := range status.Shelf {
@@ -194,16 +202,20 @@ func loadPinnedMemoryNotes() []string {
 		return nil
 	}
 
-	notes := make([]string, 0, len(payload.PinnedNotes))
-	for _, note := range payload.PinnedNotes {
+	return normalizePinnedNotes(payload.PinnedNotes)
+}
+
+func normalizePinnedNotes(notes []string) []string {
+	cleanedNotes := make([]string, 0, len(notes))
+	for _, note := range notes {
 		cleaned := strings.TrimSpace(note)
 		if cleaned == "" {
 			continue
 		}
-		notes = append(notes, cleaned)
-		if len(notes) >= maxPinnedNotes {
+		cleanedNotes = append(cleanedNotes, cleaned)
+		if len(cleanedNotes) >= maxPinnedNotes {
 			break
 		}
 	}
-	return notes
+	return cleanedNotes
 }

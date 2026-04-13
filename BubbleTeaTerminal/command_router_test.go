@@ -209,12 +209,33 @@ func TestWorkshopCommandTryWithTrailingArgsFailsClosed(t *testing.T) {
 	}
 }
 
+func TestWorkshopInformationalCommandsRouteLocally(t *testing.T) {
+	tests := []struct {
+		input string
+		want  commandAction
+	}{
+		{input: "/status", want: commandActionStatus},
+		{input: "/memory", want: commandActionMemory},
+		{input: "/what-changed", want: commandActionWhatChanged},
+		{input: "/help", want: commandActionHelp},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			route := routeWorkshopCommand(tt.input, true, nil)
+			if route.Action != tt.want {
+				t.Fatalf("action = %q, want %q", route.Action, tt.want)
+			}
+		})
+	}
+}
+
 func TestWorkshopRequestPayloadUsesRealRouterOutput(t *testing.T) {
 	route := routeWorkshopCommand("/bench 2", true, []workshopVariant{
 		{VariantID: "storm-brand-a"},
 		{VariantID: "storm-brand-b"},
 	})
-	payload := buildWorkshopRequestPayloadFromRoute(route, "session-1", "storm-brand")
+	payload := buildWorkshopRequestPayloadFromRoute(route, "session-1", "storm-brand", 7)
 
 	if got := payload["action"]; got != "bench" {
 		t.Fatalf("action = %#v, want bench", got)
@@ -225,7 +246,23 @@ func TestWorkshopRequestPayloadUsesRealRouterOutput(t *testing.T) {
 	if got := payload["bench_item_id"]; got != "storm-brand" {
 		t.Fatalf("bench_item_id = %#v, want storm-brand", got)
 	}
+	if got := payload["snapshot_id"]; got != 7 {
+		t.Fatalf("snapshot_id = %#v, want 7", got)
+	}
 	if got := payload["variant_id"]; got != "storm-brand-b" {
 		t.Fatalf("variant_id = %#v, want storm-brand-b", got)
+	}
+}
+
+func TestWorkshopRequestPayloadAlwaysIncludesSnapshotID(t *testing.T) {
+	route := routeWorkshopCommand("/variants make it louder", true, nil)
+	payload := buildWorkshopRequestPayloadFromRoute(route, "session-1", "storm-brand", 0)
+
+	got, ok := payload["snapshot_id"]
+	if !ok {
+		t.Fatal("snapshot_id missing from workshop request payload, want explicit zero when not hydrated")
+	}
+	if got != 0 {
+		t.Fatalf("snapshot_id = %#v, want 0", got)
 	}
 }
