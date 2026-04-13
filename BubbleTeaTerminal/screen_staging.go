@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -49,20 +48,6 @@ func runtimeSummaryCmd() tea.Cmd {
 		banner := resolveRuntimeBanner(summary, ipc.ReadBridgeHeartbeat(), status, detail)
 		return runtimeSummaryMsg{banner: banner}
 	})
-}
-
-func resolveWorkshopVariantReference(arg string, shelf []workshopVariant) string {
-	raw := strings.TrimSpace(arg)
-	if raw == "" {
-		return ""
-	}
-	if idx, err := strconv.Atoi(raw); err == nil {
-		zeroIdx := idx - 1
-		if zeroIdx >= 0 && zeroIdx < len(shelf) {
-			return shelf[zeroIdx].VariantID
-		}
-	}
-	return raw
 }
 
 func (m *model) applyWorkshopStatus(status ipc.WorkshopStatus) {
@@ -206,8 +191,8 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.commandInput.Blur()
 					return m, nil
 				}
-				workshopCmd := parseWorkshopCommand(raw)
-				if workshopCmd.Name == "" {
+				route := routeWorkshopCommand(raw, m.hasActiveWorkshopBench(), m.workshop.Shelf)
+				if route.Action == commandActionNone {
 					m.workshopNotice = "Director command was empty."
 					return m, nil
 				}
@@ -215,7 +200,25 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commandInput.Blur()
 				m.commandInput.SetValue("")
 
-				if workshopCmd.Name == "try" {
+				if route.Action == commandActionUnsupported {
+					if isEmptyForgeCommand(raw) {
+						m.workshopNotice = "Prompt cannot be empty."
+						return m, nil
+					}
+					m.workshopNotice = "Unsupported command."
+					return m, nil
+				}
+
+				if route.Action == commandActionForge {
+					if strings.TrimSpace(route.Directive) == "" {
+						m.workshopNotice = "Prompt cannot be empty."
+						return m, nil
+					}
+					m.prompt = route.Directive
+					return m.enterForge()
+				}
+
+				if route.Action == commandActionTry {
 					if m.workshop.Bench.Manifest == nil {
 						m.workshopNotice = "Bench is empty."
 						return m, nil
@@ -239,11 +242,7 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, ipc.PollConnectorStatusCmd(0)
 				}
 
-				if workshopCmd.Name == "bench" {
-					workshopCmd.Arg = resolveWorkshopVariantReference(workshopCmd.Arg, m.workshop.Shelf)
-				}
-
-				payload := buildWorkshopRequestPayload(workshopCmd, m.workshop.SessionID, m.workshop.Bench.ItemID)
+				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID)
 				if err := ipc.WriteWorkshopRequest(payload); err != nil {
 					m.workshopNotice = "Director request failed: " + err.Error()
 					return m, nil

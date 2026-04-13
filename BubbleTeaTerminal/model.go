@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -194,3 +195,7 @@ const (
 
 var forgeVerbs = []string{"Tempering", "Binding", "Etching", "Awakening"}
 var wizardGlyphs = []string{"\u26e8", "\u2694", "\u2736", "\u27b6"}
+
+func (m model) hasActiveWorkshopBench() bool {
+	return strings.TrimSpace(m.workshop.Bench.ItemID) != "" || m.workshop.Bench.Manifest != nil
+}

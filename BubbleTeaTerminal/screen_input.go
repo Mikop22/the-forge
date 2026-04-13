@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"theforge/internal/ipc"
 )
 
 func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -18,9 +20,43 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errMsg = "Prompt cannot be empty."
 				return m, nil
 			}
-			m.prompt = prompt
+			route := routeWorkshopCommand(prompt, m.hasActiveWorkshopBench(), m.workshop.Shelf)
 			m.errMsg = ""
-			return m.enterForge()
+			switch route.Action {
+			case commandActionForge:
+				if strings.TrimSpace(route.Directive) == "" {
+					m.errMsg = "Prompt cannot be empty."
+					return m, nil
+				}
+				m.prompt = route.Directive
+				return m.enterForge()
+			case commandActionVariants, commandActionBench, commandActionRestore:
+				if !m.hasActiveWorkshopBench() {
+					m.errMsg = "No active bench."
+					return m, nil
+				}
+				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID)
+				if err := ipc.WriteWorkshopRequest(payload); err != nil {
+					m.errMsg = "Director request failed: " + err.Error()
+					return m, nil
+				}
+				m.state = screenStaging
+				m.commandMode = false
+				return m, ipc.PollWorkshopStatusCmd(0)
+			case commandActionTry:
+				m.errMsg = "Use the workshop command bar for try."
+				return m, nil
+			case commandActionUnsupported:
+				if isEmptyForgeCommand(prompt) {
+					m.errMsg = "Prompt cannot be empty."
+					return m, nil
+				}
+				m.errMsg = "Unsupported command."
+				return m, nil
+			default:
+				m.errMsg = "Unsupported command."
+				return m, nil
+			}
 		}
 	}
 
