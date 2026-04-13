@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"theforge/internal/ipc"
+	"theforge/internal/modsources"
 )
 
 type workshopBench struct {
@@ -17,6 +21,8 @@ type workshopBench struct {
 	SubType         string
 	CraftingStation string
 }
+
+const maxPinnedNotes = 5
 
 type workshopVariant struct {
 	VariantID      string
@@ -172,4 +178,32 @@ func manifestString(manifest map[string]interface{}, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func loadPinnedMemoryNotes() []string {
+	path := filepath.Join(modsources.Dir(), "session_shell_status.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var payload struct {
+		PinnedNotes []string `json:"pinned_notes"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+
+	notes := make([]string, 0, len(payload.PinnedNotes))
+	for _, note := range payload.PinnedNotes {
+		cleaned := strings.TrimSpace(note)
+		if cleaned == "" {
+			continue
+		}
+		notes = append(notes, cleaned)
+		if len(notes) >= maxPinnedNotes {
+			break
+		}
+	}
+	return notes
 }
