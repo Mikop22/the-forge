@@ -18,7 +18,7 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEsc && m.forgeErr != "" {
 		m.state = screenInput
 		m.forgeErr = ""
-		m.textInput.Focus()
+		m.commandInput.Focus()
 		return m, nil
 	}
 
