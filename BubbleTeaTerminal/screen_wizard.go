@@ -36,7 +36,7 @@ func (m model) updateWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.wizardIndex++
 			if m.wizardIndex >= 2 {
 				m.state = screenInput
-				m.textInput.Focus()
+				m.commandInput.Focus()
 				return m, nil
 			}
 			m.configureWizardStep()

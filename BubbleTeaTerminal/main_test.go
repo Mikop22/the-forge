@@ -7,6 +7,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"theforge/internal/ipc"
 )
 
 func TestParseDotEnvStripsCommentsOutsideQuotes(t *testing.T) {
@@ -69,31 +73,21 @@ func TestReadOrchestratorHeartbeatUsesDistinctFile(t *testing.T) {
 	}
 }
 
-func TestInitialModelStartsAtContentSelection(t *testing.T) {
+func TestInitialModelStartsAtShellPrompt(t *testing.T) {
 	m := initialModel()
-	if m.state != screenMode {
-		t.Fatalf("initial state = %v, want %v", m.state, screenMode)
+	if m.state != screenInput {
+		t.Fatalf("initial state = %v, want %v", m.state, screenInput)
 	}
 
-	items := m.modeList.Items()
-	if len(items) < 5 {
-		t.Fatalf("mode list has %d items, want at least 5", len(items))
-	}
-
-	first, ok := items[0].(optionItem)
-	if !ok {
-		t.Fatalf("first mode item has unexpected type %T", items[0])
-	}
-	if first.title != "Weapon" {
-		t.Fatalf("first content option = %q, want Weapon", first.title)
+	if got := strings.TrimSpace(m.commandInput.Placeholder); got == "" {
+		t.Fatal("command input placeholder is empty, want a startup prompt")
 	}
 }
 
 func TestSessionShellRendersThreeRegions(t *testing.T) {
 	m := initialModel()
 	m.state = screenInput
-	m.textInput.SetValue("forge the shell")
-	m.commandInput.SetValue("forge a new staff")
+	m.commandInput.SetValue("forge the shell")
 
 	got := m.View()
 	wantOrder := []string{"Top Strip", "Feed Container", "Persistent Command Bar"}
@@ -113,6 +107,92 @@ func TestSessionShellRendersThreeRegions(t *testing.T) {
 	}
 	if !strings.Contains(got, "forge the shell") {
 		t.Fatalf("session shell render = %q, want it to contain feed content text", got)
+	}
+}
+
+func TestInputShell(t *testing.T) {
+	m := initialModel()
+	if m.hasActiveWorkshopBench() {
+		t.Fatalf("initial model has an active bench, want none")
+	}
+
+	m.commandInput.SetValue("radiant spear")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+
+	if next.state != screenForge {
+		t.Fatalf("initial shell Enter state = %v, want %v for forge prompt entry", next.state, screenForge)
+	}
+	if got := strings.TrimSpace(next.prompt); got != "radiant spear" {
+		t.Fatalf("forge prompt = %q, want radiant spear", got)
+	}
+	if got := next.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
+		t.Fatalf("shell view = %q, want persistent shell chrome", got)
+	}
+}
+
+func TestWizardShell(t *testing.T) {
+	m := initialModel()
+	m.state = screenMode
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if next.state != screenWizard {
+		t.Fatalf("mode selection state = %v, want %v after choosing the manual wizard path", next.state, screenWizard)
+	}
+	if got := next.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
+		t.Fatalf("wizard shell view = %q, want persistent shell chrome", got)
+	}
+}
+
+func TestForgeToInjectFlow(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FORGE_MOD_SOURCES_DIR", dir)
+
+	m := initialModel()
+	m.commandInput.SetValue("moonlit hook")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if next.state != screenForge {
+		t.Fatalf("forge flow start state = %v, want %v", next.state, screenForge)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "generation_status.json"), []byte(`{"status":"ready","item_name":"Moonlit Hook","manifest":{"stats":{"damage":12}}}`), 0644); err != nil {
+		t.Fatalf("write ready status: %v", err)
+	}
+	updated, _ = next.Update(ipc.PollStatusMsg{})
+	ready, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if ready.state != screenForge {
+		t.Fatalf("forge flow ready poll state = %v, want %v", ready.state, screenForge)
+	}
+	if got := ready.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
+		t.Fatalf("ready shell view = %q, want persistent shell chrome", got)
+	}
+
+	updated, _ = ready.Update(forgeDoneMsg{})
+	staged, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if staged.state != screenStaging {
+		t.Fatalf("forge flow staged state = %v, want %v", staged.state, screenStaging)
+	}
+	if got := staged.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
+		t.Fatalf("staged shell view = %q, want persistent shell chrome", got)
 	}
 }
 

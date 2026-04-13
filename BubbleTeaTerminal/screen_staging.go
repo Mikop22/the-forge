@@ -263,7 +263,7 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.injectStatus = ""
 			m.injectDetail = ""
 			m.state = screenInput
-			m.textInput.Focus()
+			m.commandInput.Focus()
 			return m, nil
 		case "r", "R":
 			m.previewMode = previewModeReprompt
@@ -476,7 +476,7 @@ func (m model) stagingView() string {
 }
 
 func (m *model) resetForCraftAnother() {
-	m.state = screenMode
+	m.state = screenInput
 	m.prompt = ""
 	m.tier = ""
 	m.contentType = ""
@@ -512,7 +512,7 @@ func (m *model) resetForCraftAnother() {
 	m.textInput.SetValue("")
 	m.previewInput.SetValue("")
 	m.commandInput.SetValue("")
-	m.textInput.Focus()
+	m.commandInput.Focus()
 	m.modeList.Select(0)
 }
 

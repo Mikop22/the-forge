@@ -12,10 +12,13 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.Type {
 		case tea.KeyEsc:
-			m.state = screenWizard
+			m.state = screenMode
 			return m, nil
 		case tea.KeyEnter:
-			prompt := strings.TrimSpace(m.textInput.Value())
+			prompt := strings.TrimSpace(m.commandInput.Value())
+			if prompt == "" {
+				prompt = strings.TrimSpace(m.textInput.Value())
+			}
 			if prompt == "" {
 				m.errMsg = "Prompt cannot be empty."
 				return m, nil
@@ -63,7 +66,7 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.textInput, cmd = m.textInput.Update(msg)
+	m.commandInput, cmd = m.commandInput.Update(msg)
 	return m, cmd
 }
 
@@ -82,11 +85,11 @@ func (m model) inputView() string {
 	}
 	lines = append(lines,
 		"",
-		styles.PromptInput.Render(m.textInput.View()),
+		styles.PromptInput.Render(m.commandInput.View()),
 	)
 	if m.errMsg != "" {
 		lines = append(lines, styles.Error.Render(m.errMsg))
 	}
-	lines = append(lines, "", styles.Hint.Render("Enter forge  •  Esc back"))
+	lines = append(lines, "", styles.Hint.Render("Enter forge  •  Esc manual mode"))
 	return strings.Join(lines, "\n")
 }

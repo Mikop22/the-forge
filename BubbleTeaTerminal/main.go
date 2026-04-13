@@ -18,7 +18,6 @@ import (
 func initialModel() model {
 	ti := textinput.New()
 	ti.Placeholder = "Describe your forged item..."
-	ti.Focus()
 	ti.CharLimit = 120
 	ti.Width = 54
 	ti.Prompt = ""
@@ -30,10 +29,11 @@ func initialModel() model {
 	pi.Prompt = ""
 
 	ci := textinput.New()
-	ci.Placeholder = "Tell the director what to change or use /variants"
+	ci.Placeholder = "Describe your forged item..."
 	ci.CharLimit = 160
 	ci.Width = 56
 	ci.Prompt = ""
+	ci.Focus()
 
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(lipgloss.NewStyle().Foreground(colorRune)))
 
@@ -59,7 +59,7 @@ func initialModel() model {
 	wizardList.SetHeight(12)
 
 	return model{
-		state:        screenMode,
+		state:        screenInput,
 		textInput:    ti,
 		previewInput: pi,
 		commandInput: ci,
