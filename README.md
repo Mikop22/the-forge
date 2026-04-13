@@ -1,6 +1,7 @@
 # The Forge
 
-Terraria item workshop for tModLoader.
+<img width="972" height="503" alt="Screenshot 2026-04-12 at 11 35 37 PM" src="https://github.com/user-attachments/assets/976c9d18-2e84-4e81-893c-3abf445628df" />
+
 
 Describe an item, and The Forge can design it, generate art, build the mod output, and inject it live into a running terraria world.
 
@@ -73,7 +74,7 @@ FAL_IMAGE_TO_IMAGE_ENABLED=true
 | `FAL_KEY` | Pixelsmith image generation |
 | `FAL_IMAGE_TO_IMAGE_ENABLED` | optional reference-aware art path |
 
-### 3. Pixelsmith weights
+### 3. Pixelsmith weights (must have for terraria compatible sprites)
 
 Download the sprite model weights into `agents/pixelsmith/`:
 
