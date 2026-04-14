@@ -5,12 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"theforge/internal/ipc"
 	"theforge/internal/modsources"
+)
+
+const (
+	forgeStalePollThreshold   = 10
+	forgeTimeoutPollThreshold = 90
 )
 
 func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -36,6 +42,7 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case ipc.PollStatusMsg:
+		m.forgePollCount++
 		ps := ipc.ReadGenerationStatus()
 		switch ps.Status {
 		case "ready":
@@ -44,14 +51,23 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.forgeSprPath = ps.SpritePath
 			m.forgeProjPath = ps.ProjectileSpritePath
 			m.heat = 100
+			m.operationKind = operationIdle
+			m.operationStale = false
 			m.appendFeedEvent(sessionEventKindSystem, "Forge complete: "+strings.TrimSpace(ps.ItemName))
 			return m, func() tea.Msg { return forgeDoneMsg{} }
 		case "error":
 			if ps.ErrMsg != "" {
 				m.appendFeedEvent(sessionEventKindFailure, "Forge error: "+ps.ErrMsg)
 			}
+			m.operationKind = operationIdle
+			m.operationStale = false
 			return m, func() tea.Msg { return forgeErrMsg{message: ps.ErrMsg} }
 		default:
+			if m.forgePollCount >= forgeTimeoutPollThreshold {
+				m.operationKind = operationIdle
+				m.operationStale = false
+				return m, func() tea.Msg { return forgeErrMsg{message: "Forge timed out."} }
+			}
 			// "building" or file not yet written — update stage and keep polling.
 			if ps.StagePct > m.stageTargetPct {
 				m.stageTargetPct = ps.StagePct
@@ -63,11 +79,17 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if label == "" {
 				label = "Building"
 			}
+			m.operationStale = m.forgePollCount >= forgeStalePollThreshold
+			if m.operationStale {
+				m.operationLabel = "forge"
+			}
 			m.upsertFeedEvent(sessionEventKindRuntime, fmt.Sprintf("Forge progress: %d%% %s", ps.StagePct, label))
 			return m, ipc.PollStatusCmd()
 		}
 	case forgeErrMsg:
 		m.forgeErr = msg.message
+		m.operationKind = operationIdle
+		m.operationStale = false
 		return m, nil
 	case forgeDoneMsg:
 		m.state = screenStaging
@@ -120,8 +142,14 @@ func (m model) enterForge() (tea.Model, tea.Cmd) {
 	m.revealPhase = 0
 	m.forgeErr = ""
 	m.forgeItemName = ""
+	m.forgePollCount = 0
 
 	prompt := m.prompt
+	m.operationKind = operationForging
+	m.operationLabel = prompt
+	m.operationStartedAt = time.Now().UTC()
+	m.operationStale = false
+
 	tier := m.tier
 	contentType := m.contentType
 	subType := m.subType

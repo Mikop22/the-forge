@@ -61,9 +61,11 @@ func initialModel() model {
 	workshop := loadWorkshopState()
 	bridgeAlive := ipc.ReadBridgeHeartbeat()
 	workshop.Runtime.BridgeAlive = bridgeAlive
+	contentWidth := 120
 
 	return model{
 		state:        screenInput,
+		contentWidth: contentWidth,
 		textInput:    ti,
 		previewInput: pi,
 		commandInput: ci,
@@ -95,12 +97,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.termCompact = msg.Width < compactWidthThreshold || msg.Height < compactHeightThreshold
-		panelWidth := max(56, msg.Width-10)
-		if panelWidth > 88 {
-			panelWidth = 88
-		}
-		m.modeList.SetWidth(panelWidth - 8)
-		m.wizardList.SetWidth(panelWidth - 8)
+		m.contentWidth = clampInt(msg.Width-4, 32, 120)
+		panelWidth := clampInt(msg.Width-4, 32, 88)
+		listWidth := max(1, panelWidth-8)
+		m.modeList.SetWidth(listWidth)
+		m.wizardList.SetWidth(listWidth)
+		m.commandInput.Width = max(1, m.contentWidth-2)
+		m.textInput.Width = max(1, m.contentWidth-2)
+		m.previewInput.Width = max(1, min(42, m.contentWidth-2))
 	case animTickMsg:
 		m.animTick++
 		return m, animTickCmd()
@@ -124,6 +128,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 }
+
+func clampInt(value, minimum, maximum int) int {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
 func (m model) View() string {
 	content := m.screenView()
 	panel := m.sessionShell.render(m, content)
@@ -135,8 +149,8 @@ func (m model) View() string {
 	return lipgloss.Place(
 		m.width,
 		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
+		lipgloss.Left,
+		lipgloss.Bottom,
 		panel,
 		lipgloss.WithWhitespaceBackground(colorBg),
 	)

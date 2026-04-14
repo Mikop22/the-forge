@@ -3,6 +3,11 @@ package main
 import (
 	"strconv"
 	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"theforge/internal/ipc"
 )
 
 type commandAction string
@@ -199,4 +204,82 @@ func buildWorkshopRequestPayloadFromRoute(route commandRoute, sessionID, benchIt
 	}
 
 	return payload
+}
+
+func (m model) handleShellCommand(raw string) (tea.Model, tea.Cmd) {
+	prompt := strings.TrimSpace(raw)
+	m.shellNotice = ""
+	m.shellError = ""
+	m.errMsg = ""
+	m.workshopNotice = ""
+
+	if prompt == "" {
+		m.shellError = "Prompt cannot be empty."
+		m.errMsg = m.shellError
+		return m, nil
+	}
+
+	route := routeWorkshopCommand(prompt, m.hasActiveWorkshopBench(), m.workshop.Shelf)
+	switch route.Action {
+	case commandActionForge:
+		if strings.TrimSpace(route.Directive) == "" {
+			m.shellError = "Prompt cannot be empty."
+			m.errMsg = m.shellError
+			return m, nil
+		}
+		m.prompt = route.Directive
+		m.appendFeedEvent(sessionEventKindPrompt, "Forge: "+route.Directive)
+		return m.enterForge()
+	case commandActionVariants, commandActionBench, commandActionRestore:
+		if !m.hasActiveWorkshopBench() {
+			m.shellError = "No active bench."
+			m.errMsg = m.shellError
+			m.workshopNotice = m.shellError
+			return m, nil
+		}
+		payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID, m.workshop.SnapshotID)
+		if err := ipc.WriteWorkshopRequest(payload); err != nil {
+			m.shellError = "Director request failed: " + err.Error()
+			m.errMsg = m.shellError
+			m.workshopNotice = m.shellError
+			return m, nil
+		}
+		m.shellNotice = "Director request sent."
+		m.workshopNotice = m.shellNotice
+		m.operationKind = operationDirector
+		m.operationLabel = "director"
+		m.operationStartedAt = time.Now().UTC()
+		m.operationStale = false
+		m.state = screenStaging
+		m.commandMode = false
+		return m, ipc.PollWorkshopStatusCmd(0)
+	case commandActionTry:
+		if !m.hasActiveWorkshopBench() {
+			m.shellError = "No active bench."
+			m.errMsg = m.shellError
+			m.workshopNotice = m.shellError
+			return m, nil
+		}
+		return m.tryCurrentBench()
+	case commandActionStatus, commandActionMemory, commandActionWhatChanged, commandActionHelp:
+		if response := m.shellInfoResponse(route); response != "" {
+			m.shellNotice = response
+			m.workshopNotice = response
+		}
+		return m, nil
+	case commandActionUnsupported:
+		if isEmptyForgeCommand(prompt) {
+			m.shellError = "Prompt cannot be empty."
+		} else {
+			m.shellError = "Unsupported command."
+		}
+		m.errMsg = m.shellError
+		m.workshopNotice = m.shellError
+		return m, nil
+	default:
+		m.shellError = "Unsupported command."
+		m.errMsg = m.shellError
+		m.workshopNotice = m.shellError
+		return m, nil
+	}
 }

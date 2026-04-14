@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,6 +79,8 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, ipc.PollWorkshopStatusCmd(msg.Attempt + 1)
 	case connectorStatusMsg:
 		m.injecting = false
+		m.operationKind = operationIdle
+		m.operationStale = false
 		m.injectStatus = msg.status
 		m.injectDetail = msg.detail
 		m.workshop.Runtime.LastInjectStatus = msg.status
@@ -99,6 +102,8 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case workshopStatusMsg:
 		m.applyWorkshopStatus(msg.status)
+		m.operationKind = operationIdle
+		m.operationStale = false
 		return m, nil
 	}
 
@@ -165,55 +170,10 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.commandInput.Blur()
 					return m, nil
 				}
-				route := routeWorkshopCommand(raw, m.hasActiveWorkshopBench(), m.workshop.Shelf)
-				if route.Action == commandActionNone {
-					m.workshopNotice = "Director command was empty."
-					return m, nil
-				}
 				m.commandMode = false
 				m.commandInput.Blur()
 				m.commandInput.SetValue("")
-
-				if route.Action == commandActionUnsupported {
-					if isEmptyForgeCommand(raw) {
-						m.workshopNotice = "Prompt cannot be empty."
-						return m, nil
-					}
-					m.workshopNotice = "Unsupported command."
-					return m, nil
-				}
-
-				if route.Action == commandActionForge {
-					if strings.TrimSpace(route.Directive) == "" {
-						m.workshopNotice = "Prompt cannot be empty."
-						return m, nil
-					}
-					m.prompt = route.Directive
-					m.appendFeedEvent(sessionEventKindPrompt, "Forge: "+route.Directive)
-					return m.enterForge()
-				}
-
-				if route.Action == commandActionTry {
-					return m.tryCurrentBench()
-				}
-
-				if isLocalShellInfoAction(route.Action) {
-					response := m.shellInfoResponse(route)
-					if response != "" {
-						m.appendFeedEvent(sessionEventKindSystem, response)
-						m.workshopNotice = response
-					}
-					return m, nil
-				}
-
-				payload := buildWorkshopRequestPayloadFromRoute(route, m.workshop.SessionID, m.workshop.Bench.ItemID, m.workshop.SnapshotID)
-				if err := ipc.WriteWorkshopRequest(payload); err != nil {
-					m.workshopNotice = "Director request failed: " + err.Error()
-					return m, nil
-				}
-				m.appendFeedEvent(sessionEventKindSystem, "Workshop action sent: "+string(route.Action))
-				m.workshopNotice = "Director request sent."
-				return m, ipc.PollWorkshopStatusCmd(0)
+				return m.handleShellCommand(raw)
 			}
 
 			var cmd tea.Cmd
@@ -267,6 +227,10 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if strings.TrimSpace(m.workshop.Bench.Label) != "" {
 				label = m.workshop.Bench.Label
 			}
+			m.operationKind = operationInjecting
+			m.operationLabel = label
+			m.operationStartedAt = time.Now().UTC()
+			m.operationStale = false
 			m.appendFeedEvent(sessionEventKindSystem, "Accept & Inject: "+label)
 			m.appendPreviewHistory()
 			// Always use the instant inject path: write forge_inject.json and
@@ -276,6 +240,8 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 			injectItemName := label
 			if err := ipc.WriteInjectFile(m.forgeManifest, injectItemName, m.forgeSprPath, m.forgeProjPath); err != nil {
 				m.injecting = false
+				m.operationKind = operationIdle
+				m.operationStale = false
 				m.injectErr = err.Error()
 				return m, nil
 			}
@@ -292,6 +258,10 @@ func (m model) tryCurrentBench() (tea.Model, tea.Cmd) {
 	}
 	m.state = screenStaging
 	m.injecting = true
+	m.operationKind = operationInjecting
+	m.operationLabel = m.workshop.Bench.Label
+	m.operationStartedAt = time.Now().UTC()
+	m.operationStale = false
 	m.injectErr = ""
 	m.injectStatus = ""
 	m.injectDetail = ""
@@ -304,6 +274,8 @@ func (m model) tryCurrentBench() (tea.Model, tea.Cmd) {
 		m.workshop.Bench.ProjectilePath,
 	); err != nil {
 		m.injecting = false
+		m.operationKind = operationIdle
+		m.operationStale = false
 		m.workshopNotice = "Bench try failed: " + err.Error()
 		return m, nil
 	}
@@ -371,7 +343,11 @@ func (m model) stagingView() string {
 					statsBox := styles.StatsFrame.Render(stats)
 					panels = append(panels, statsBox)
 				}
-				headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top, panels...))
+				if m.contentWidth > 0 && m.contentWidth < 90 {
+					headerLines = append(headerLines, panels...)
+				} else {
+					headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top, panels...))
+				}
 			}
 		}
 
@@ -384,28 +360,8 @@ func (m model) stagingView() string {
 		}
 	}
 
-	headerLines = append(headerLines, "")
-
-	// Bridge status line.
-	if m.workshop.Runtime.BridgeAlive {
-		worldLine := "⬡ Runtime Online"
-		if m.workshop.Runtime.WorldLoaded {
-			worldLine += " · World Loaded"
-		} else {
-			worldLine += " · Main Menu"
-		}
-		headerLines = append(headerLines, styles.Success.Render(worldLine))
-	} else {
-		headerLines = append(headerLines, styles.Hint.Render("⬡ Runtime Offline — open Terraria with ForgeConnector loaded"))
-	}
-	if m.workshop.Runtime.LiveItemName != "" {
-		headerLines = append(headerLines, styles.Hint.Render("Live item: "+m.workshop.Runtime.LiveItemName))
-	}
-	if m.workshop.Runtime.LastInjectStatus != "" {
-		headerLines = append(headerLines, styles.Hint.Render("Inject status: "+m.workshop.Runtime.LastInjectStatus))
-	}
-	if m.workshop.Runtime.LastRuntimeNote != "" {
-		headerLines = append(headerLines, styles.Hint.Render(m.workshop.Runtime.LastRuntimeNote))
+	if runtimeState := m.renderRuntimeState(); runtimeState != "" {
+		headerLines = append(headerLines, "", runtimeState)
 	}
 
 	if m.injectErr != "" {
@@ -482,6 +438,49 @@ func (m model) stagingView() string {
 	return strings.Join(headerLines, "\n")
 }
 
+func (m model) renderRuntimeState() string {
+	if !m.shouldRenderRuntimeState() {
+		return ""
+	}
+
+	lines := []string{}
+	if m.workshop.Runtime.BridgeAlive {
+		worldLine := "⬡ Runtime Online"
+		if m.workshop.Runtime.WorldLoaded {
+			worldLine += " · World Loaded"
+		} else {
+			worldLine += " · Main Menu"
+		}
+		lines = append(lines, styles.Success.Render(worldLine))
+	} else {
+		lines = append(lines, styles.Hint.Render("⬡ Runtime Offline — open Terraria with ForgeConnector loaded"))
+	}
+	if m.workshop.Runtime.LiveItemName != "" {
+		lines = append(lines, styles.Hint.Render("Live item: "+m.workshop.Runtime.LiveItemName))
+	}
+	if m.workshop.Runtime.LastInjectStatus != "" {
+		lines = append(lines, styles.Hint.Render("Inject status: "+m.workshop.Runtime.LastInjectStatus))
+	}
+	if m.workshop.Runtime.LastRuntimeNote != "" {
+		lines = append(lines, styles.Hint.Render(m.workshop.Runtime.LastRuntimeNote))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m model) shouldRenderRuntimeState() bool {
+	if !m.workshop.Runtime.BridgeAlive {
+		return true
+	}
+	if m.injecting || m.injectErr != "" || m.injectStatus != "" {
+		return true
+	}
+	if m.workshop.Runtime.LastInjectStatus != "" {
+		return true
+	}
+	note := strings.TrimSpace(m.workshop.Runtime.LastRuntimeNote)
+	return strings.Contains(strings.ToLower(note), "stale") || strings.Contains(strings.ToLower(note), "error")
+}
+
 func (m *model) resetForCraftAnother() {
 	m.state = screenInput
 	m.prompt = ""
@@ -513,8 +512,15 @@ func (m *model) resetForCraftAnother() {
 	m.injectDetail = ""
 	m.commandMode = false
 	m.workshopNotice = ""
+	m.shellNotice = ""
+	m.shellError = ""
 	m.pendingManifest = nil
 	m.pendingArtFeedback = ""
+	m.operationKind = operationIdle
+	m.operationLabel = ""
+	m.operationStartedAt = time.Time{}
+	m.operationStale = false
+	m.forgePollCount = 0
 	m.workshop = newWorkshopState()
 	m.textInput.SetValue("")
 	m.previewInput.SetValue("")

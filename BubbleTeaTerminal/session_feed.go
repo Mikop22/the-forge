@@ -8,6 +8,15 @@ import (
 
 const maxSessionFeedEvents = 12
 
+func isVisibleSessionEventKind(kind sessionEventKind) bool {
+	switch kind {
+	case sessionEventKindMemory, sessionEventKindFailure:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *sessionShellState) beginScope(kind sessionEventKind) {
 	s.scopes[kind]++
 }
@@ -15,6 +24,9 @@ func (s *sessionShellState) beginScope(kind sessionEventKind) {
 func (s *sessionShellState) appendEvent(kind sessionEventKind, message string) {
 	message = strings.TrimSpace(message)
 	if message == "" {
+		return
+	}
+	if !isVisibleSessionEventKind(kind) {
 		return
 	}
 
@@ -32,6 +44,9 @@ func (s *sessionShellState) appendEvent(kind sessionEventKind, message string) {
 func (s *sessionShellState) upsertEvent(kind sessionEventKind, message string) {
 	message = strings.TrimSpace(message)
 	if message == "" {
+		return
+	}
+	if !isVisibleSessionEventKind(kind) {
 		return
 	}
 
@@ -85,9 +100,15 @@ func (s sessionShellState) renderEventRow(event sessionEvent) string {
 	return styles.Body.Render(fmt.Sprintf("%s  %s", label, event.Message))
 }
 
-func (s sessionShellState) renderEventRows() string {
+func (s sessionShellState) renderEventRows(m model) string {
 	if len(s.events) == 0 {
-		return styles.Hint.Render("Feed will appear here as the session runs.")
+		if benchLabel := activeBenchLabel(m); benchLabel != "" {
+			return strings.Join([]string{
+				styles.Hint.Render("↳ Welcome back"),
+				styles.Body.Render("  Bench "+styles.TitleRune.Render(benchLabel)+" ready."),
+			}, "\n")
+		}
+		return ""
 	}
 
 	rows := make([]string, 0, len(s.events))

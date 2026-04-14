@@ -32,6 +32,15 @@ type runtimeSummaryMsg struct {
 	banner workshopRuntimeBanner
 }
 
+type operationKind string
+
+const (
+	operationIdle      operationKind = ""
+	operationForging   operationKind = "forging"
+	operationDirector  operationKind = "director"
+	operationInjecting operationKind = "injecting"
+)
+
 type previewMode int
 
 const (
@@ -133,9 +142,10 @@ var previewStatFields = []statField{
 }
 
 type model struct {
-	state  screen
-	width  int
-	height int
+	state        screen
+	width        int
+	height       int
+	contentWidth int
 
 	craftedItems []craftedItem
 	workshop     workshopState
@@ -184,8 +194,15 @@ type model struct {
 	injectDetail       string
 	commandMode        bool
 	workshopNotice     string
+	shellNotice        string
+	shellError         string
 	pendingManifest    map[string]interface{}
 	pendingArtFeedback string
+	operationKind      operationKind
+	operationLabel     string
+	operationStartedAt time.Time
+	operationStale     bool
+	forgePollCount     int
 }
 
 const (

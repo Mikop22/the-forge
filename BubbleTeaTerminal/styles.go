@@ -80,9 +80,7 @@ func newStyles() uiStyles {
 			Foreground(colorGold).
 			Bold(true),
 		PromptInput: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorDim).
-			Padding(0, 1),
+			Foreground(colorText),
 		Ember: lipgloss.NewStyle().
 			Foreground(colorGold),
 		SigilColumn: lipgloss.NewStyle().

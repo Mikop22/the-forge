@@ -8,16 +8,18 @@ import (
 )
 
 func TestSuggestionsShowsForgeWhenNoBenchExists(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
 	m.commandInput.SetValue("")
 
 	got := m.View()
-	if !strings.Contains(got, "/forge") {
-		t.Fatalf("empty shell view = %q, want forge suggestion when no active bench exists", got)
+	if strings.Contains(got, "/forge") {
+		t.Fatalf("empty shell view = %q, want no inline suggestion when no active bench exists", got)
 	}
 }
 
 func TestSuggestionsShowsVariantsWhenBenchExists(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
 	m.workshop.Bench = workshopBench{
 		ItemID: "storm-brand",
@@ -26,12 +28,13 @@ func TestSuggestionsShowsVariantsWhenBenchExists(t *testing.T) {
 	m.commandInput.SetValue("")
 
 	got := m.View()
-	if !strings.Contains(got, "/variants") {
-		t.Fatalf("empty shell view = %q, want /variants suggestion when an active bench exists", got)
+	if strings.Contains(got, "/variants") {
+		t.Fatalf("empty shell view = %q, want no inline suggestion when an active bench exists", got)
 	}
 }
 
 func TestSuggestionsShowsBenchWhenShelfExists(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
 	m.workshop.Bench = workshopBench{
 		ItemID: "storm-brand",
@@ -43,8 +46,8 @@ func TestSuggestionsShowsBenchWhenShelfExists(t *testing.T) {
 	m.commandInput.SetValue("")
 
 	got := m.View()
-	if !strings.Contains(got, "/bench") {
-		t.Fatalf("empty shell view = %q, want /bench suggestion when shelf variants are available", got)
+	if strings.Contains(got, "/bench") {
+		t.Fatalf("empty shell view = %q, want no inline suggestion when shelf variants are available", got)
 	}
 }
 

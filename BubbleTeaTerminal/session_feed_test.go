@@ -41,12 +41,8 @@ func TestForgeProgressEmitsAndUpdatesFeedEntry(t *testing.T) {
 	updated, _ := m.updateForge(ipc.PollStatusMsg{})
 	m = updated.(model)
 
-	if got := len(m.sessionShell.events); got != 1 {
-		t.Fatalf("feed entries after first progress update = %d, want 1", got)
-	}
-
-	if got := m.sessionShell.events[0].Message; !strings.Contains(got, "12") {
-		t.Fatalf("first forge progress message = %q, want it to mention 12", got)
+	if got := len(m.sessionShell.events); got != 0 {
+		t.Fatalf("feed entries after first progress update = %d, want 0 visible entries", got)
 	}
 
 	if err := os.WriteFile(filepath.Join(dir, "generation_status.json"), []byte(`{"status":"building","stage_pct":47,"stage_label":"Binding"}`), 0o644); err != nil {
@@ -56,11 +52,8 @@ func TestForgeProgressEmitsAndUpdatesFeedEntry(t *testing.T) {
 	updated, _ = m.updateForge(ipc.PollStatusMsg{})
 	m = updated.(model)
 
-	if got := len(m.sessionShell.events); got != 1 {
-		t.Fatalf("feed entries after progress refresh = %d, want 1 updated entry", got)
-	}
-	if got := m.sessionShell.events[0].Message; !strings.Contains(got, "47") {
-		t.Fatalf("refreshed forge progress message = %q, want it to mention 47", got)
+	if got := len(m.sessionShell.events); got != 0 {
+		t.Fatalf("feed entries after progress refresh = %d, want 0 visible entries", got)
 	}
 }
 
@@ -78,8 +71,8 @@ func TestWorkshopActionsAddFeedEntry(t *testing.T) {
 	updated, _ := m.updateStaging(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = updated.(model)
 
-	if got := len(m.sessionShell.events); got <= before {
-		t.Fatalf("feed entries after workshop action = %d, want more than %d", got, before)
+	if got := len(m.sessionShell.events); got != before {
+		t.Fatalf("feed entries after workshop action = %d, want no visible feed change", got)
 	}
 }
 
@@ -94,23 +87,22 @@ func TestConnectorResultsAddFeedEntry(t *testing.T) {
 	updated, _ := m.updateStaging(connectorStatusMsg{status: "item_injected", detail: "Storm Brand delivered"})
 	m = updated.(model)
 
-	if got := len(m.sessionShell.events); got <= before {
-		t.Fatalf("feed entries after connector result = %d, want more than %d", got, before)
-	}
-	if got := feedMessages(m); len(got) == 0 || !strings.Contains(got[len(got)-1], "Storm Brand delivered") {
-		t.Fatalf("latest connector feed message = %#v, want it to include connector detail", got)
+	if got := len(m.sessionShell.events); got != before {
+		t.Fatalf("feed entries after connector result = %d, want no visible feed change", got)
 	}
 }
 
 func TestShellViewShowsFeed(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
-	m.sessionShell.events = []sessionEvent{
-		{Kind: sessionEventKindSystem, Message: "Forge progress 47%"},
+	m.workshop.Bench = workshopBench{
+		ItemID: "apple-gun",
+		Label:  "AppleGun",
 	}
 
 	got := m.View()
-	if !strings.Contains(got, "Forge progress 47%") {
-		t.Fatalf("session shell view = %q, want it to contain feed entry text", got)
+	if !strings.Contains(got, "↳ Welcome back") || !strings.Contains(got, "Bench ") || !strings.Contains(got, "AppleGun") {
+		t.Fatalf("session shell view = %q, want a welcome message when an active bench exists", got)
 	}
 }
 
@@ -138,13 +130,7 @@ func TestSecondForgeRunAppendsNewProgressRow(t *testing.T) {
 	updated, _ = m.updateForge(ipc.PollStatusMsg{})
 	m = updated.(model)
 
-	if got := len(m.sessionShell.events); got != 2 {
-		t.Fatalf("feed entries after second forge run = %d, want 2", got)
-	}
-	if got := m.sessionShell.events[0].Message; !strings.Contains(got, "12") {
-		t.Fatalf("first forge run message = %q, want it to stay on the first run", got)
-	}
-	if got := m.sessionShell.events[1].Message; !strings.Contains(got, "47") {
-		t.Fatalf("second forge run message = %q, want it to be a new progress row", got)
+	if got := len(m.sessionShell.events); got != 0 {
+		t.Fatalf("feed entries after second forge run = %d, want 0 visible entries", got)
 	}
 }

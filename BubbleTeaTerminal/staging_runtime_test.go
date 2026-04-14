@@ -47,6 +47,30 @@ func TestStagingViewShowsRuntimeBannerFields(t *testing.T) {
 	}
 }
 
+func TestStagingViewHidesHealthyIdleRuntimeDetails(t *testing.T) {
+	m := initialModel()
+	item := craftedItem{
+		label:       "Storm Brand",
+		contentType: "Weapon",
+		subType:     "Staff",
+	}
+	m.previewItem = &item
+	m.workshop.SetBenchFromCraftedItem(item, map[string]interface{}{})
+	m.revealPhase = 3
+	m.workshop.Runtime = workshopRuntimeBanner{
+		BridgeAlive: true,
+		WorldLoaded: true,
+	}
+
+	view := m.stagingView()
+	if strings.Contains(view, "Runtime Online") || strings.Contains(view, "World Loaded") {
+		t.Fatalf("stagingView() = %q, want healthy idle runtime details hidden", view)
+	}
+	if !strings.Contains(view, "[R] Reprompt sprite") {
+		t.Fatalf("stagingView() = %q, want action hints to stay visible", view)
+	}
+}
+
 func TestApplyWorkshopStatusRefreshesForgeItemName(t *testing.T) {
 	m := initialModel()
 	m.forgeItemName = "Old Name"

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"theforge/internal/ipc"
 )
@@ -91,8 +92,12 @@ func TestInitialModelOmitsStandalonePromptFormInStartupView(t *testing.T) {
 	if strings.Contains(got, "Describe your item") {
 		t.Fatalf("startup view = %q, want it to omit the legacy standalone prompt form from the main body", got)
 	}
-	if !strings.Contains(got, "Persistent Command Bar") {
-		t.Fatalf("startup view = %q, want the persistent command bar to remain the entry point", got)
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) < 2 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), ">") {
+		t.Fatalf("startup view = %q, want a raw terminal-style prompt line at the bottom", got)
+	}
+	if !strings.Contains(lines[len(lines)-2], "─") {
+		t.Fatalf("startup view = %q, want a separator line above the prompt", got)
 	}
 }
 
@@ -142,14 +147,8 @@ func TestInitialModelHydratesSessionShellAndWorkshopStatusFromMirroredFiles(t *t
 
 	m := initialModel()
 
-	if got := len(m.sessionShell.events); got != 2 {
-		t.Fatalf("startup session events = %d, want 2 hydrated events from session_shell_status.json", got)
-	}
-	if got := m.sessionShell.events[0].Message; got != "Forge: Storm Brand" {
-		t.Fatalf("first startup session event = %q, want Forge: Storm Brand", got)
-	}
-	if got := m.sessionShell.events[1].Message; got != "Forge progress 47%" {
-		t.Fatalf("second startup session event = %q, want Forge progress 47%%", got)
+	if got := len(m.sessionShell.events); got != 0 {
+		t.Fatalf("startup session events = %d, want noisy prompt/runtime/system rows filtered out", got)
 	}
 	if got := m.workshop.SessionID; got != "bench-storm-brand" {
 		t.Fatalf("startup workshop session = %q, want bench-storm-brand", got)
@@ -171,11 +170,8 @@ func TestInitialModelHydratesSessionShellAndWorkshopStatusFromMirroredFiles(t *t
 	}
 
 	gotView := m.View()
-	if !strings.Contains(gotView, "bench: Storm Brand") {
-		t.Fatalf("startup shell view = %q, want top strip to surface hydrated bench context", gotView)
-	}
-	if !strings.Contains(gotView, "shelf: 1 variant") {
-		t.Fatalf("startup shell view = %q, want top strip to surface hydrated shelf context", gotView)
+	if !strings.Contains(gotView, "↳ Welcome back") || !strings.Contains(gotView, "Bench ") || !strings.Contains(gotView, "Storm Brand") {
+		t.Fatalf("startup shell view = %q, want a welcome message for the active bench", gotView)
 	}
 }
 
@@ -199,8 +195,11 @@ func TestInitialModelInitializesRuntimeFreshnessOnStartup(t *testing.T) {
 	if !m.bridgeAlive {
 		t.Fatal("startup bridgeAlive = false, want true from live bridge heartbeat")
 	}
-	if got := m.View(); !strings.Contains(got, "runtime online") {
-		t.Fatalf("startup shell view = %q, want runtime online when bridge heartbeat is live", got)
+	if got := m.View(); strings.Contains(got, "↳ Welcome back") {
+		t.Fatalf("startup shell view = %q, want no welcome message without an active bench", got)
+	}
+	if got := m.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
+		t.Fatalf("startup shell view = %q, want a prompt-only layout without top status text", got)
 	}
 
 	cmd := m.Init()
@@ -272,14 +271,78 @@ func TestFeedEventUpdatesPersistBackToSessionShellStatus(t *testing.T) {
 	if len(payload.PinnedNotes) != 1 || payload.PinnedNotes[0] != "keep the cashout" {
 		t.Fatalf("pinned_notes = %#v, want keep the cashout", payload.PinnedNotes)
 	}
-	if got := len(payload.RecentEvents); got != 3 {
-		t.Fatalf("recent_events = %d, want 3", got)
+	if got := len(payload.RecentEvents); got != 0 {
+		t.Fatalf("recent_events = %d, want noisy runtime/system rows omitted from persistence", got)
 	}
-	if payload.RecentEvents[0].Message != "Forge progress: 58%" {
-		t.Fatalf("updated runtime event = %q, want Forge progress: 58%%", payload.RecentEvents[0].Message)
+}
+
+func TestInitialModelDropsNoisyFeedEventsFromPersistedSessionShellStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
 	}
-	if payload.RecentEvents[2].Message != "Workshop action sent: bench" {
-		t.Fatalf("appended event = %q, want Workshop action sent: bench", payload.RecentEvents[2].Message)
+
+	status := `{
+  "session_id": "sess-1",
+  "snapshot_id": 9,
+  "recent_events": [
+    {"kind": "prompt", "message": "Forge: radiant spear"},
+    {"kind": "runtime", "message": "Forge progress: 40%"},
+    {"kind": "system", "message": "Workshop Ready"},
+    {"kind": "memory", "message": "keep the cashout"}
+  ],
+  "pinned_notes": ["keep the cashout"]
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "session_shell_status.json"), []byte(status), 0644); err != nil {
+		t.Fatalf("write session_shell_status.json: %v", err)
+	}
+
+	m := initialModel()
+
+	if got := len(m.sessionShell.events); got != 1 {
+		t.Fatalf("startup visible session events = %d, want only the non-noisy memory entry", got)
+	}
+	if got := m.sessionShell.events[0].Kind; got != sessionEventKindMemory {
+		t.Fatalf("startup visible session event kind = %q, want memory", got)
+	}
+	if got := m.sessionShell.events[0].Message; got != "keep the cashout" {
+		t.Fatalf("startup visible session event message = %q, want keep the cashout", got)
+	}
+	if strings.Contains(m.View(), "Forge progress") || strings.Contains(m.View(), "Workshop Ready") || strings.Contains(m.View(), "Forge: radiant spear") {
+		t.Fatalf("startup session shell view = %q, want noisy prompt/runtime/system rows removed", m.View())
+	}
+}
+
+func TestInitialModelShowsWelcomeMessageForActiveBench(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	modSources := filepath.Join(home, "ModSources")
+	t.Setenv("FORGE_MOD_SOURCES_DIR", modSources)
+
+	if err := os.MkdirAll(modSources, 0755); err != nil {
+		t.Fatalf("mkdir mod sources: %v", err)
+	}
+
+	workshopStatus := `{
+  "session_id": "bench-applegun",
+  "bench": {"item_id": "apple-gun", "label": "AppleGun", "manifest": {"type": "Weapon"}},
+  "shelf": [],
+  "last_action": "ready"
+}`
+	if err := os.WriteFile(filepath.Join(modSources, "workshop_status.json"), []byte(workshopStatus), 0644); err != nil {
+		t.Fatalf("write workshop_status.json: %v", err)
+	}
+
+	m := initialModel()
+	got := m.View()
+	if !strings.Contains(got, "↳ Welcome back") || !strings.Contains(got, "Bench ") || !strings.Contains(got, "AppleGun") {
+		t.Fatalf("startup shell view = %q, want a welcome message for the active bench", got)
 	}
 }
 
@@ -355,27 +418,34 @@ func TestSessionShellRendersThreeRegions(t *testing.T) {
 	m.commandInput.SetValue("forge the shell")
 
 	got := m.View()
-	wantOrder := []string{"Top Strip", "Feed Container", "Persistent Command Bar"}
-	last := -1
-	for _, want := range wantOrder {
-		idx := strings.Index(got, want)
-		if idx < 0 {
-			t.Fatalf("session shell render = %q, want it to contain region %q", got, want)
-		}
-		if idx <= last {
-			t.Fatalf("session shell render = %q, want region %q after previous region", got, want)
-		}
-		last = idx
+	if !strings.Contains(got, "> ") {
+		t.Fatalf("session shell render = %q, want a raw prompt line", got)
 	}
 	if strings.Contains(got, "Sigils") {
 		t.Fatalf("session shell render = %q, want it to omit legacy shell chrome", got)
 	}
-	if !strings.Contains(got, "forge the shell") {
-		t.Fatalf("session shell render = %q, want it to contain feed content text", got)
+	if strings.Contains(got, "Feed Container") {
+		t.Fatalf("session shell render = %q, want feed frame chrome removed", got)
+	}
+	if strings.Contains(got, " | ") {
+		t.Fatalf("session shell render = %q, want status line without pipe separators", got)
+	}
+	if strings.Contains(got, "The Forge") {
+		t.Fatalf("session shell render = %q, want the middle title block removed", got)
+	}
+	if strings.Contains(got, "Esc manual mode") {
+		t.Fatalf("session shell render = %q, want the mode hint removed", got)
+	}
+	if strings.Contains(got, "/forge") || strings.Contains(got, "/variants") || strings.Contains(got, "/bench") {
+		t.Fatalf("session shell render = %q, want no inline command suggestions in the footer", got)
+	}
+	if !strings.Contains(got, "─") {
+		t.Fatalf("session shell render = %q, want a terminal separator line above the prompt", got)
 	}
 }
 
 func TestInputShell(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
 	if m.hasActiveWorkshopBench() {
 		t.Fatalf("initial model has an active bench, want none")
@@ -395,8 +465,52 @@ func TestInputShell(t *testing.T) {
 	if got := strings.TrimSpace(next.prompt); got != "radiant spear" {
 		t.Fatalf("forge prompt = %q, want radiant spear", got)
 	}
-	if got := next.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
-		t.Fatalf("shell view = %q, want persistent shell chrome", got)
+	if got := next.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
+		t.Fatalf("shell view = %q, want prompt-only chrome without top status text", got)
+	}
+}
+
+func TestInputShellLocalCommandsRenderVisibleResponse(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.commandInput.SetValue("/help")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+
+	got := next.View()
+	if !strings.Contains(got, "Commands:") {
+		t.Fatalf("shell view = %q, want visible /help response", got)
+	}
+}
+
+func TestStagingCommandModeLocalCommandsRenderVisibleResponse(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.state = screenStaging
+	m.commandMode = true
+	m.commandInput.Focus()
+	m.commandInput.SetValue("/status")
+	m.workshop.Bench = workshopBench{
+		ItemID: "apple-gun",
+		Label:  "AppleGun",
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+
+	got := next.View()
+	if !strings.Contains(got, "Status:") || !strings.Contains(got, "AppleGun") {
+		t.Fatalf("staging shell view = %q, want visible /status response", got)
+	}
+	if next.commandMode {
+		t.Fatal("command mode still enabled after local command")
 	}
 }
 
@@ -456,8 +570,34 @@ func TestWizardShell(t *testing.T) {
 	if next.state != screenWizard {
 		t.Fatalf("mode selection state = %v, want %v after choosing the manual wizard path", next.state, screenWizard)
 	}
-	if got := next.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
-		t.Fatalf("wizard shell view = %q, want persistent shell chrome", got)
+	if got := next.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
+		t.Fatalf("wizard shell view = %q, want prompt-only chrome without top status text", got)
+	}
+}
+
+func TestModeShellEscReturnsToInput(t *testing.T) {
+	m := initialModel()
+	m.state = screenInput
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mode, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if mode.state != screenMode {
+		t.Fatalf("state after first Esc = %v, want %v", mode.state, screenMode)
+	}
+	if got := mode.modeView(); !strings.Contains(got, "Esc back") {
+		t.Fatalf("mode view = %q, want visible Esc back hint", got)
+	}
+
+	updated, _ = mode.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+	if next.state != screenInput {
+		t.Fatalf("state after second Esc = %v, want %v", next.state, screenInput)
 	}
 }
 
@@ -488,8 +628,8 @@ func TestForgeToInjectFlow(t *testing.T) {
 	if ready.state != screenForge {
 		t.Fatalf("forge flow ready poll state = %v, want %v", ready.state, screenForge)
 	}
-	if got := ready.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
-		t.Fatalf("ready shell view = %q, want persistent shell chrome", got)
+	if got := ready.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
+		t.Fatalf("ready shell view = %q, want prompt-only chrome without top status text", got)
 	}
 
 	updated, _ = ready.Update(forgeDoneMsg{})
@@ -500,8 +640,148 @@ func TestForgeToInjectFlow(t *testing.T) {
 	if staged.state != screenStaging {
 		t.Fatalf("forge flow staged state = %v, want %v", staged.state, screenStaging)
 	}
-	if got := staged.View(); !strings.Contains(got, "Top Strip") || !strings.Contains(got, "Persistent Command Bar") {
-		t.Fatalf("staged shell view = %q, want persistent shell chrome", got)
+	if got := staged.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
+		t.Fatalf("staged shell view = %q, want prompt-only chrome without top status text", got)
+	}
+}
+
+func TestForgeShowsTransientOperationFeedback(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.commandInput.SetValue("moonlit hook")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, ok := updated.(model)
+	if !ok {
+		t.Fatalf("updated model has unexpected type %T", updated)
+	}
+
+	got := next.View()
+	if !strings.Contains(got, "Forging moonlit hook") {
+		t.Fatalf("forge shell view = %q, want transient forge operation feedback", got)
+	}
+}
+
+func TestForgeShowsStaleAndTimeoutFeedback(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.prompt = "moonlit hook"
+	updated, _ := m.enterForge()
+	m = updated.(model)
+
+	for i := 0; i < forgeStalePollThreshold; i++ {
+		updated, _ = m.Update(ipc.PollStatusMsg{})
+		m = updated.(model)
+	}
+	if got := m.View(); !strings.Contains(got, "Still waiting for the forge") {
+		t.Fatalf("stale forge view = %q, want stale forge feedback", got)
+	}
+
+	for i := forgeStalePollThreshold; i < forgeTimeoutPollThreshold-1; i++ {
+		updated, _ = m.Update(ipc.PollStatusMsg{})
+		m = updated.(model)
+	}
+	updated, cmd := m.Update(ipc.PollStatusMsg{})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("timeout poll command = nil, want forgeErrMsg command")
+	}
+	updated, _ = m.Update(cmd())
+	m = updated.(model)
+	if m.forgeErr != "Forge timed out." {
+		t.Fatalf("forgeErr = %q, want Forge timed out.", m.forgeErr)
+	}
+	if got := m.View(); !strings.Contains(got, "Forge timed out.") {
+		t.Fatalf("timeout forge view = %q, want timeout error feedback", got)
+	}
+}
+
+func TestSessionShellCommandBarIsPlainTextPrompt(t *testing.T) {
+	m := initialModel()
+
+	got := m.View()
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) < 2 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), ">") {
+		t.Fatalf("command bar render = %q, want a bare terminal prompt line", got)
+	}
+	if !strings.Contains(lines[len(lines)-2], "─") {
+		t.Fatalf("command bar render = %q, want a separator line above the prompt", got)
+	}
+	if strings.Contains(lines[len(lines)-1], "Describe your forged item") {
+		t.Fatalf("command bar render = %q, want no placeholder text in the prompt line", got)
+	}
+}
+
+func TestSessionShellAnchorsToBottomOfTerminal(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.workshop.Bench = workshopBench{ItemID: "apple-gun", Label: "AppleGun"}
+	m.width = 120
+	m.height = 40
+
+	got := m.View()
+	lines := strings.Split(got, "\n")
+	firstNonEmpty := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			firstNonEmpty = i
+			break
+		}
+	}
+	if firstNonEmpty <= 0 {
+		t.Fatalf("session shell render = %q, want the first non-empty line to appear after leading terminal whitespace", got)
+	}
+	if !strings.Contains(lines[firstNonEmpty], "↳ Welcome back") {
+		t.Fatalf("session shell render = %q, want the first non-empty line to be the welcome message", got)
+	}
+}
+
+func TestSessionShellDoesNotLeaveLargeGapBeforePrompt(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.workshop.Bench = workshopBench{ItemID: "apple-gun", Label: "AppleGun"}
+	m.width = 120
+	m.height = 40
+
+	got := m.View()
+	lines := strings.Split(got, "\n")
+	statusIndex := -1
+	promptIndex := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if statusIndex < 0 && strings.HasPrefix(trimmed, "↳ Welcome back") {
+			statusIndex = i
+		}
+		if strings.HasPrefix(trimmed, ">") {
+			promptIndex = i
+			break
+		}
+	}
+	if statusIndex < 0 {
+		t.Fatalf("session shell render = %q, want a status line", got)
+	}
+	if promptIndex < 0 {
+		t.Fatalf("session shell render = %q, want a visible prompt line", got)
+	}
+	if promptIndex-statusIndex > 4 {
+		t.Fatalf("session shell render = %q, want the prompt to sit directly under the separator line", got)
+	}
+}
+
+func TestSessionShellUsesTerminalWidthForSeparator(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+	next := updated.(model)
+
+	got := next.View()
+	for _, line := range strings.Split(got, "\n") {
+		if lipgloss.Width(line) > 40 {
+			t.Fatalf("line width = %d for %q, want <= 40 in view %q", lipgloss.Width(line), line, got)
+		}
+	}
+	if !strings.Contains(got, strings.Repeat("─", 36)) {
+		t.Fatalf("view = %q, want separator derived from terminal width", got)
 	}
 }
 

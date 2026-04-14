@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +70,9 @@ func loadSessionShellState() sessionShellState {
 		event := sessionEvent{
 			Kind:    normalizeSessionEventKind(entry.Kind),
 			Message: message,
+		}
+		if !isVisibleSessionEventKind(event.Kind) {
+			continue
 		}
 		if entry.TimestampMS != nil {
 			event.CreatedAt = time.UnixMilli(*entry.TimestampMS).UTC()
@@ -162,32 +164,21 @@ func normalizeSessionEventKind(kind string) sessionEventKind {
 func (s sessionShellState) render(m model, content string) string {
 	s.pinnedNotes = loadPinnedMemoryNotes()
 	top := s.renderTopStrip(m)
-	feed := s.renderFeedContainer(content)
+	feed := s.renderFeedContainer(m, content)
 	command := s.renderCommandBar(m)
-	return strings.Join([]string{top, feed, command}, "\n")
+	parts := make([]string, 0, 3)
+	if strings.TrimSpace(top) != "" {
+		parts = append(parts, top)
+	}
+	if strings.TrimSpace(feed) != "" {
+		parts = append(parts, feed)
+	}
+	parts = append(parts, command)
+	return strings.Join(parts, "\n")
 }
 
 func (s sessionShellState) renderTopStrip(m model) string {
-	statusBits := []string{"Forge Director"}
-	if m.bridgeAlive {
-		statusBits = append(statusBits, "runtime online")
-	} else {
-		statusBits = append(statusBits, "runtime offline")
-	}
-	if benchLabel := activeBenchLabel(m); benchLabel != "" {
-		statusBits = append(statusBits, "bench: "+benchLabel)
-	}
-	if shelfCount := len(m.workshop.Shelf); shelfCount > 0 {
-		label := "variants"
-		if shelfCount == 1 {
-			label = "variant"
-		}
-		statusBits = append(statusBits, fmt.Sprintf("shelf: %d %s", shelfCount, label))
-	}
-	return strings.Join([]string{
-		styles.Meta.Render("Top Strip"),
-		styles.Body.Render(strings.Join(statusBits, " | ")),
-	}, "\n")
+	return ""
 }
 
 func activeBenchLabel(m model) string {
@@ -200,19 +191,50 @@ func activeBenchLabel(m model) string {
 	return strings.TrimSpace(m.workshop.Bench.ItemID)
 }
 
-func (s sessionShellState) renderFeedContainer(content string) string {
-	feed := s.renderEventRows()
+func (s sessionShellState) renderFeedContainer(m model, content string) string {
+	feed := s.renderEventRows(m)
 	body := []string{feed}
+	if m.shellError != "" {
+		body = append(body, styles.Error.Render(m.shellError))
+	} else if m.shellNotice != "" {
+		body = append(body, styles.Hint.Render(m.shellNotice))
+	}
+	if operation := renderOperationLine(m); operation != "" {
+		body = append(body, operation)
+	}
 	if pinned := s.renderPinnedMemoryBlock(); pinned != "" {
 		body = append(body, pinned)
 	}
 	if trimmed := strings.TrimSpace(content); trimmed != "" {
 		body = append(body, trimmed)
 	}
-	return strings.Join([]string{
-		styles.Meta.Render("Feed Container"),
-		styles.FrameCalm.Render(strings.Join(body, "\n\n")),
-	}, "\n")
+	return strings.Join(body, "\n")
+}
+
+func renderOperationLine(m model) string {
+	label := strings.TrimSpace(m.operationLabel)
+	switch m.operationKind {
+	case operationForging:
+		if label == "" {
+			label = "item"
+		}
+		if m.operationStale {
+			return styles.Hint.Render("Still waiting for the forge...")
+		}
+		return styles.Injecting.Render("⟳ Forging " + label)
+	case operationDirector:
+		if label == "" {
+			label = "director"
+		}
+		return styles.Injecting.Render("⟳ Waiting on " + label)
+	case operationInjecting:
+		if label == "" {
+			label = "item"
+		}
+		return styles.Injecting.Render("⟳ Injecting " + label + " into Terraria")
+	default:
+		return ""
+	}
 }
 
 func (s sessionShellState) renderPinnedMemoryBlock() string {
@@ -220,7 +242,7 @@ func (s sessionShellState) renderPinnedMemoryBlock() string {
 		return ""
 	}
 
-	lines := []string{styles.Meta.Render("Pinned memory")}
+	lines := []string{styles.Hint.Render("Pinned memory")}
 	for _, note := range s.pinnedNotes {
 		lines = append(lines, styles.Body.Render("• "+note))
 	}
@@ -229,16 +251,18 @@ func (s sessionShellState) renderPinnedMemoryBlock() string {
 
 func (s sessionShellState) renderCommandBar(m model) string {
 	command := strings.TrimSpace(m.commandInput.Value())
-	if command == "" {
-		command = m.commandInput.Placeholder
-	}
-	body := []string{}
-	if suggestion := m.shellSuggestion(); suggestion != "" {
-		body = append(body, styles.Hint.Render(suggestion))
-	}
-	body = append(body, styles.PromptInput.Render(command))
 	return strings.Join([]string{
-		styles.Meta.Render("Persistent Command Bar"),
-		strings.Join(body, "\n"),
+		styles.Hint.Render(strings.Repeat("─", shellContentWidth(m))),
+		styles.Meta.Render(">") + " " + styles.PromptInput.Render(command),
 	}, "\n")
+}
+
+func shellContentWidth(m model) int {
+	if m.contentWidth > 0 {
+		return m.contentWidth
+	}
+	if m.width > 0 {
+		return clampInt(m.width-4, 32, 120)
+	}
+	return 120
 }
