@@ -88,6 +88,12 @@ func (s sessionShellState) renderEventRow(event sessionEvent) string {
 		return arrow + " " + styles.Body.Render(event.Message)
 	}
 
+	if event.Kind == sessionEventKindFailure {
+		icon := lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("✗")
+		label := lipgloss.NewStyle().Foreground(colorError).Render("Error")
+		return icon + " " + label + "  " + styles.Body.Render(event.Message)
+	}
+
 	label := strings.ToUpper(string(event.Kind))
 	switch event.Kind {
 	case sessionEventKindPrompt:

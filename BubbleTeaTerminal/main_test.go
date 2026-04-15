@@ -1084,3 +1084,17 @@ func TestUserPromptAppearsInFeedAfterSubmit(t *testing.T) {
 		t.Fatalf("view = %q, want user prompt echoed in feed", got)
 	}
 }
+
+func TestErrorEventRendersWithPrefix(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.sessionShell.appendEvent(sessionEventKindFailure, "pipeline collapsed: ArtistAgent failed")
+
+	got := m.View()
+	if !strings.Contains(got, "✗") {
+		t.Fatalf("view = %q, want error event rendered with ✗ icon", got)
+	}
+	if !strings.Contains(got, "pipeline collapsed") {
+		t.Fatalf("view = %q, want error message text in view", got)
+	}
+}
