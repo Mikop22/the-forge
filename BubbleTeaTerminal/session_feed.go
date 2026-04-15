@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 const maxSessionFeedEvents = 12
 
 func isVisibleSessionEventKind(kind sessionEventKind) bool {
 	switch kind {
-	case sessionEventKindMemory, sessionEventKindFailure:
+	case sessionEventKindMemory, sessionEventKindFailure, sessionEventKindUser:
 		return true
 	default:
 		return false
@@ -81,6 +83,11 @@ func (m *model) upsertFeedEvent(kind sessionEventKind, message string) {
 }
 
 func (s sessionShellState) renderEventRow(event sessionEvent) string {
+	if event.Kind == sessionEventKindUser {
+		arrow := lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(">")
+		return arrow + " " + styles.Body.Render(event.Message)
+	}
+
 	label := strings.ToUpper(string(event.Kind))
 	switch event.Kind {
 	case sessionEventKindPrompt:

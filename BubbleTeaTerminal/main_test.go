@@ -79,9 +79,9 @@ func TestInitialModelStartsAtShellPrompt(t *testing.T) {
 	if m.state != screenInput {
 		t.Fatalf("initial state = %v, want %v", m.state, screenInput)
 	}
-
-	if got := strings.TrimSpace(m.commandInput.Placeholder); got == "" {
-		t.Fatal("command input placeholder is empty, want a startup prompt")
+	// Placeholder is intentionally empty — the splash header provides context.
+	if m.commandInput.Focused() != true {
+		t.Fatal("command input should be focused on startup")
 	}
 }
 
@@ -430,8 +430,9 @@ func TestSessionShellRendersThreeRegions(t *testing.T) {
 	if strings.Contains(got, " | ") {
 		t.Fatalf("session shell render = %q, want status line without pipe separators", got)
 	}
-	if strings.Contains(got, "The Forge") {
-		t.Fatalf("session shell render = %q, want the middle title block removed", got)
+	// Splash header intentionally contains "The Forge" — check framed title block is gone instead.
+	if strings.Contains(got, "╭") || strings.Contains(got, "╰") {
+		t.Fatalf("session shell render = %q, want the framed title block removed", got)
 	}
 	if strings.Contains(got, "Esc manual mode") {
 		t.Fatalf("session shell render = %q, want the mode hint removed", got)
@@ -731,8 +732,12 @@ func TestSessionShellAnchorsToBottomOfTerminal(t *testing.T) {
 	if firstNonEmpty <= 0 {
 		t.Fatalf("session shell render = %q, want the first non-empty line to appear after leading terminal whitespace", got)
 	}
-	if !strings.Contains(lines[firstNonEmpty], "↳ Welcome back") {
-		t.Fatalf("session shell render = %q, want the first non-empty line to be the welcome message", got)
+	// Splash header renders before the welcome message; verify both are present.
+	if !strings.Contains(got, "The Forge") {
+		t.Fatalf("session shell render = %q, want splash header", got)
+	}
+	if !strings.Contains(got, "↳ Welcome back") {
+		t.Fatalf("session shell render = %q, want the welcome message", got)
 	}
 }
 
@@ -1050,5 +1055,19 @@ weights_path = ""
 	path := filepath.Join(cfgDir, "config.toml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestUserPromptAppearsInFeedAfterSubmit(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.commandInput.SetValue("glowing war axe")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(model)
+
+	got := next.View()
+	if !strings.Contains(got, "glowing war axe") {
+		t.Fatalf("view = %q, want user prompt echoed in feed", got)
 	}
 }

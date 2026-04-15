@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"theforge/internal/modsources"
 )
 
@@ -72,6 +73,11 @@ func loadSessionShellState() sessionShellState {
 			Message: message,
 		}
 		if !isVisibleSessionEventKind(event.Kind) {
+			continue
+		}
+		// Failure and user events are only meaningful in the session that produced them.
+		// Don't carry them across restarts.
+		if event.Kind == sessionEventKindFailure || event.Kind == sessionEventKindUser {
 			continue
 		}
 		if entry.TimestampMS != nil {
@@ -181,6 +187,46 @@ func (s sessionShellState) renderTopStrip(m model) string {
 	return ""
 }
 
+const forgeVersion = "v0.1.0"
+
+// renderSplash renders the startup header block matching Claude Code's layout:
+// [pixel art]  The Forge v0.1.0
+//              Architect · Pixelsmith · Forge Master
+//              ~/path
+// Replace the artLines below with your own pixel art.
+func renderSplash(m model) string {
+	artStyle := lipgloss.NewStyle().Foreground(colorGold)
+	// Placeholder art — swap these lines for custom pixel art.
+	artLines := []string{
+		artStyle.Render(" ▄██████▄ "),
+		artStyle.Render(" ██    ██ "),
+		artStyle.Render(" ████████ "),
+		artStyle.Render("  ██████  "),
+		artStyle.Render("   ████   "),
+	}
+	art := lipgloss.NewStyle().PaddingRight(2).Render(strings.Join(artLines, "\n"))
+
+	wd, _ := os.Getwd()
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(wd, home) {
+		wd = "~" + wd[len(home):]
+	}
+
+	titleStyle := lipgloss.NewStyle().Foreground(colorText).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
+	info := strings.Join([]string{
+		titleStyle.Render("The Forge") + " " + dimStyle.Render(forgeVersion),
+		dimStyle.Render("Architect · Pixelsmith · Forge Master"),
+		dimStyle.Render(wd),
+	}, "\n")
+
+	// Suppress on very narrow terminals where the layout would overflow.
+	if m.width > 0 && m.width < 52 {
+		return titleStyle.Render("The Forge") + " " + dimStyle.Render(forgeVersion)
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Center, art, info)
+}
+
 func activeBenchLabel(m model) string {
 	if label := strings.TrimSpace(m.forgeItemName); label != "" {
 		return label
@@ -193,7 +239,7 @@ func activeBenchLabel(m model) string {
 
 func (s sessionShellState) renderFeedContainer(m model, content string) string {
 	feed := s.renderEventRows(m)
-	body := []string{feed}
+	body := []string{renderSplash(m), feed}
 	if m.shellError != "" {
 		body = append(body, styles.Error.Render(m.shellError))
 	} else if m.shellNotice != "" {
@@ -250,10 +296,9 @@ func (s sessionShellState) renderPinnedMemoryBlock() string {
 }
 
 func (s sessionShellState) renderCommandBar(m model) string {
-	command := strings.TrimSpace(m.commandInput.Value())
 	return strings.Join([]string{
 		styles.Hint.Render(strings.Repeat("─", shellContentWidth(m))),
-		styles.Meta.Render(">") + " " + styles.PromptInput.Render(command),
+		styles.Meta.Render(">") + " " + m.commandInput.View(),
 	}, "\n")
 }
 

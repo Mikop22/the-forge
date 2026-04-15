@@ -219,6 +219,10 @@ func (m model) handleShellCommand(raw string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Echo the raw input into the feed before routing.
+	m.appendFeedEvent(sessionEventKindUser, prompt)
+	m.commandInput.SetValue("")
+
 	route := routeWorkshopCommand(prompt, m.hasActiveWorkshopBench(), m.workshop.Shelf)
 	switch route.Action {
 	case commandActionForge:

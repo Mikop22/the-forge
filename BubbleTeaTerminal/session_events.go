@@ -11,6 +11,7 @@ const (
 	sessionEventKindFailure  sessionEventKind = "failure"
 	sessionEventKindHistory  sessionEventKind = "history"
 	sessionEventKindMemory   sessionEventKind = "memory"
+	sessionEventKindUser     sessionEventKind = "user"
 )
 
 type sessionEvent struct {
