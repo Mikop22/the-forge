@@ -153,3 +153,107 @@ func TestCombatPreviewProfileUsesUseTimeForLoopLength(t *testing.T) {
 		t.Fatalf("loopTicks did not increase with use time: fast=%d slow=%d", fast.loopTicks, slow.loopTicks)
 	}
 }
+
+func TestRenderCombatPreviewReturnsNonEmptyFrameWithItemSprite(t *testing.T) {
+	itemPath := writeTestSprite(t, 8, 8, func(img *image.RGBA) {
+		for y := 1; y < 7; y++ {
+			for x := 2; x < 6; x++ {
+				img.Set(x, y, color.RGBA{R: 60, G: 140, B: 255, A: 255})
+			}
+		}
+	})
+
+	rendered := renderCombatPreview(craftedItem{
+		contentType: "Weapon",
+		subType:     "Sword",
+		stats:       itemStats{UseTime: 18},
+		spritePath:  itemPath,
+	}, nil, 0, 72)
+
+	if rendered == "" {
+		t.Fatal("renderCombatPreview returned empty frame")
+	}
+	if got := lipgloss.Width(rendered); got == 0 {
+		t.Fatal("renderCombatPreview rendered zero-width output")
+	}
+}
+
+func TestRenderCombatPreviewIncludesProjectileWhenAvailable(t *testing.T) {
+	itemPath := writeTestSprite(t, 8, 8, func(img *image.RGBA) {
+		for y := 1; y < 7; y++ {
+			for x := 1; x < 7; x++ {
+				img.Set(x, y, color.RGBA{R: 65, G: 135, B: 255, A: 255})
+			}
+		}
+	})
+	projPath := writeTestSprite(t, 4, 4, func(img *image.RGBA) {
+		for y := 0; y < 4; y++ {
+			for x := 0; x < 4; x++ {
+				img.Set(x, y, color.RGBA{R: 255, G: 80, B: 40, A: 255})
+			}
+		}
+	})
+
+	item := craftedItem{
+		contentType:    "Weapon",
+		subType:        "Gun",
+		stats:          itemStats{UseTime: 16},
+		spritePath:     itemPath,
+		projSpritePath: projPath,
+	}
+	profile := combatPreviewProfileFor(item, nil)
+	renderedWithProjectile := renderCombatPreview(item, nil, profile.projectileDelayTicks+1, 72)
+	renderedWithoutProjectile := renderCombatPreview(craftedItem{
+		contentType:    item.contentType,
+		subType:        item.subType,
+		stats:          item.stats,
+		spritePath:     item.spritePath,
+		projSpritePath: "",
+	}, nil, profile.projectileDelayTicks+1, 72)
+
+	if renderedWithProjectile == renderedWithoutProjectile {
+		t.Fatal("projectile sprite did not change rendered frame")
+	}
+}
+
+func TestRenderCombatPreviewMissingSpritesDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("renderCombatPreview panicked: %v", r)
+		}
+	}()
+
+	rendered := renderCombatPreview(craftedItem{
+		contentType: "Weapon",
+		subType:     "Sword",
+		stats:       itemStats{UseTime: 20},
+	}, nil, 3, 72)
+
+	if rendered == "" {
+		t.Fatal("missing sprites should still render a placeholder frame")
+	}
+}
+
+func TestRenderCombatPreviewFrameChangesWithTick(t *testing.T) {
+	itemPath := writeTestSprite(t, 10, 8, func(img *image.RGBA) {
+		for y := 1; y < 7; y++ {
+			for x := 2; x < 8; x++ {
+				img.Set(x, y, color.RGBA{R: 100, G: 220, B: 120, A: 255})
+			}
+		}
+	})
+
+	item := craftedItem{
+		contentType: "Weapon",
+		subType:     "Sword",
+		stats:       itemStats{UseTime: 18},
+		spritePath:  itemPath,
+	}
+
+	early := renderCombatPreview(item, nil, 0, 72)
+	later := renderCombatPreview(item, nil, 6, 72)
+
+	if early == later {
+		t.Fatal("rendered frame did not change with tick")
+	}
+}

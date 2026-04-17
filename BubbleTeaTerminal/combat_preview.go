@@ -348,3 +348,396 @@ func (c *previewCanvas) renderHalfBlocks() string {
 
 	return out.String()
 }
+
+func renderCombatPreview(item craftedItem, manifest map[string]interface{}, tick int, maxWidth int) string {
+	const (
+		previewCanvasWidth  = 72
+		previewCanvasHeight = 32
+		minUsefulWidth      = 18
+	)
+
+	if maxWidth > 0 && maxWidth < minUsefulWidth {
+		return ""
+	}
+
+	canvasWidth := previewCanvasWidth
+	if maxWidth > 0 && maxWidth < canvasWidth {
+		canvasWidth = maxWidth
+	}
+	if canvasWidth <= 0 {
+		return ""
+	}
+
+	canvas := newPreviewCanvas(canvasWidth, previewCanvasHeight, color.RGBA{R: 14, G: 18, B: 24, A: 255})
+	combatPreviewPaintArena(canvas)
+
+	profile := combatPreviewProfileFor(item, manifest)
+	loopTicks := profile.loopTicks
+	if loopTicks <= 0 {
+		loopTicks = 16
+	}
+	normalizedTick := combatPreviewNormalizeTick(tick, loopTicks)
+	phase := float64(normalizedTick) / float64(loopTicks)
+
+	handX := float64(canvasWidth) * 0.23
+	handY := float64(canvas.h) - 11
+	playerX := handX - 7
+	playerTop := handY - 9
+	playerBottom := float64(canvas.h) - 7
+
+	combatPreviewDrawPlayer(canvas, playerX, playerTop, playerBottom, handX, handY, phase)
+
+	itemImg, ok := loadPreviewSprite(item.spritePath)
+	if !ok {
+		itemImg = combatPreviewPlaceholderSprite(profile.kind)
+	}
+	combatPreviewDrawItem(canvas, itemImg, handX, handY, profile, normalizedTick, phase)
+
+	if profile.kind == combatPreviewShoot {
+		combatPreviewDrawMuzzleFlash(canvas, handX, handY, profile, normalizedTick, phase)
+	}
+
+	if projImg, ok := loadPreviewSprite(item.projSpritePath); ok {
+		combatPreviewDrawProjectile(canvas, projImg, handX, handY, profile, normalizedTick, phase)
+	}
+
+	return canvas.renderHalfBlocks()
+}
+
+func combatPreviewNormalizeTick(tick int, loopTicks int) int {
+	if loopTicks <= 0 {
+		return 0
+	}
+	t := tick % loopTicks
+	if t < 0 {
+		t += loopTicks
+	}
+	return t
+}
+
+func combatPreviewPaintArena(canvas *previewCanvas) {
+	if canvas == nil || canvas.w <= 0 || canvas.h <= 0 {
+		return
+	}
+
+	backWall := color.RGBA{R: 22, G: 28, B: 36, A: 255}
+	floor := color.RGBA{R: 26, G: 34, B: 28, A: 255}
+	line := color.RGBA{R: 78, G: 88, B: 92, A: 255}
+
+	for y := 0; y < canvas.h; y++ {
+		for x := 0; x < canvas.w; x++ {
+			switch {
+			case y >= canvas.h-5:
+				canvas.set(x, y, floor)
+			case y == canvas.h-6:
+				canvas.set(x, y, line)
+			default:
+				canvas.set(x, y, backWall)
+			}
+		}
+	}
+
+	horizonY := canvas.h/2 - 2
+	for x := 0; x < canvas.w; x += 4 {
+		canvas.set(x, horizonY, color.RGBA{R: 34, G: 42, B: 50, A: 255})
+	}
+}
+
+func combatPreviewDrawPlayer(canvas *previewCanvas, playerX, playerTop, playerBottom, handX, handY, phase float64) {
+	if canvas == nil {
+		return
+	}
+
+	body := color.RGBA{R: 61, G: 68, B: 81, A: 255}
+	shadow := color.RGBA{R: 28, G: 31, B: 39, A: 255}
+	skin := color.RGBA{R: 214, G: 188, B: 150, A: 255}
+	outline := color.RGBA{R: 96, G: 103, B: 117, A: 255}
+
+	px := int(math.Round(playerX))
+	py := int(math.Round(playerTop))
+	pb := int(math.Round(playerBottom))
+	hx := int(math.Round(handX))
+	hy := int(math.Round(handY))
+
+	combatPreviewFillRect(canvas, px+2, py+4, 5, 7, body)
+	combatPreviewFillRect(canvas, px+1, py+5, 7, 1, shadow)
+	combatPreviewFillRect(canvas, px+3, py+1, 3, 3, skin)
+	combatPreviewFillRect(canvas, px, py+5, 2, 5, outline)
+	combatPreviewFillRect(canvas, px+7, py+5, 2, 5, outline)
+	combatPreviewDrawLine(canvas, px+4, py+6, hx, hy, skin)
+	combatPreviewDrawLine(canvas, px+4, py+7, px+2, pb-1, shadow)
+	combatPreviewDrawLine(canvas, px+5, py+7, px+7, pb-1, shadow)
+
+	if phase > 0.5 {
+		canvas.set(hx, hy, skin)
+		canvas.set(hx+1, hy, skin)
+	} else {
+		canvas.set(hx, hy, skin)
+	}
+}
+
+func combatPreviewDrawItem(canvas *previewCanvas, itemImg image.Image, handX, handY float64, profile combatPreviewProfile, tick int, phase float64) {
+	if canvas == nil || itemImg == nil {
+		return
+	}
+
+	// The item is animated around the hand anchor and rotated to suggest the
+	// current attack style without trying to reproduce Terraria's full arm math.
+	var (
+		centerX  = handX + 6
+		centerY  = handY
+		scale    = 1.0
+		rotation = 0.0
+	)
+
+	switch profile.kind {
+	case combatPreviewSwing:
+		swing := -1.65 + math.Sin(phase*math.Pi*2)*1.25
+		reach := 6.0 + math.Sin(phase*math.Pi)*2.5
+		centerX = handX + math.Cos(swing)*reach
+		centerY = handY + math.Sin(swing)*reach*0.72
+		rotation = swing + 0.65
+		scale = 1.08
+	case combatPreviewThrust:
+		thrust := 0.5 - 0.5*math.Cos(phase*math.Pi*2)
+		centerX = handX + 2.5 + thrust*10.5
+		centerY = handY - 0.3 + math.Sin(phase*math.Pi*2)*0.8
+		rotation = 0.16 + thrust*0.2
+		scale = 1.02 + thrust*0.08
+	case combatPreviewShoot:
+		recoil := math.Sin(phase * math.Pi * 2)
+		centerX = handX + 5.2 + recoil*0.8
+		centerY = handY - 1.2 + math.Sin(phase*math.Pi*2)*0.4
+		rotation = -0.12 + recoil*0.07
+		scale = 0.98
+	default:
+		centerX = handX + 4.8
+		centerY = handY - 0.8
+	}
+
+	canvas.drawSprite(itemImg, centerX, centerY, scale, rotation)
+	combatPreviewDrawItemAccent(canvas, centerX, centerY, rotation, profile, phase)
+}
+
+func combatPreviewDrawProjectile(canvas *previewCanvas, projImg image.Image, handX, handY float64, profile combatPreviewProfile, tick int, phase float64) {
+	if canvas == nil || projImg == nil || profile.kind != combatPreviewShoot {
+		return
+	}
+
+	delay := profile.projectileDelayTicks
+	if tick < delay {
+		return
+	}
+
+	flightTicks := profile.loopTicks - delay
+	if flightTicks < 4 {
+		flightTicks = 4
+	}
+	flightPhase := float64(tick-delay) / float64(flightTicks)
+	if flightPhase > 1 {
+		flightPhase = math.Mod(flightPhase, 1)
+	}
+
+	startX := handX + 6
+	startY := handY - 0.4
+	maxTravel := math.Min(float64(canvas.w)-startX-3, profile.projectileSpeed*3.2)
+	if maxTravel < 2 {
+		maxTravel = 2
+	}
+
+	projectileX := startX + flightPhase*maxTravel
+	projectileY := startY - math.Sin(flightPhase*math.Pi)*1.25
+	rotation := math.Atan2(-math.Sin(flightPhase*math.Pi)*0.28, profile.projectileSpeed)
+	scale := 0.78
+	if profile.projectileSpeed > 10 {
+		scale = 0.9
+	}
+
+	canvas.drawSprite(projImg, projectileX, projectileY, scale, rotation)
+	combatPreviewDrawProjectileTrail(canvas, projectileX, projectileY, profile, phase)
+
+	if flightPhase < 0.18 {
+		combatPreviewDrawSpark(canvas, int(math.Round(projectileX))+1, int(math.Round(projectileY)), color.RGBA{R: 255, G: 214, B: 122, A: 255})
+	}
+}
+
+func combatPreviewDrawMuzzleFlash(canvas *previewCanvas, handX, handY float64, profile combatPreviewProfile, tick int, phase float64) {
+	if canvas == nil || profile.kind != combatPreviewShoot {
+		return
+	}
+
+	if tick < profile.projectileDelayTicks-1 || tick > profile.projectileDelayTicks+1 {
+		return
+	}
+
+	baseX := int(math.Round(handX + 5))
+	baseY := int(math.Round(handY - 1))
+	combatPreviewEraseHorizontalMark(canvas, baseX-1, baseY, 4)
+	combatPreviewEraseHorizontalMark(canvas, baseX, baseY-1, 2)
+	if math.Sin(phase*math.Pi*2) > 0 {
+		combatPreviewEraseHorizontalMark(canvas, baseX+1, baseY+1, 3)
+	}
+}
+
+func combatPreviewDrawSpark(canvas *previewCanvas, x, y int, px color.RGBA) {
+	if canvas == nil {
+		return
+	}
+
+	canvas.set(x, y, px)
+	canvas.set(x-1, y, px)
+	canvas.set(x+1, y, px)
+	canvas.set(x, y-1, px)
+	canvas.set(x, y+1, px)
+}
+
+func combatPreviewDrawHorizontalMark(canvas *previewCanvas, x, y, length int, px color.RGBA) {
+	if canvas == nil || length <= 0 {
+		return
+	}
+	for i := 0; i < length; i++ {
+		canvas.set(x+i, y, px)
+	}
+}
+
+func combatPreviewEraseHorizontalMark(canvas *previewCanvas, x, y, length int) {
+	if canvas == nil || length <= 0 {
+		return
+	}
+	for i := 0; i < length; i++ {
+		canvas.set(x+i, y, canvas.bg)
+	}
+}
+
+func combatPreviewDrawItemAccent(canvas *previewCanvas, centerX, centerY, rotation float64, profile combatPreviewProfile, phase float64) {
+	if canvas == nil {
+		return
+	}
+
+	switch profile.kind {
+	case combatPreviewSwing:
+		accentX := int(math.Round(centerX + math.Cos(rotation-0.9)*5.2))
+		accentY := int(math.Round(centerY + math.Sin(rotation-0.9)*4.4))
+		if phase < 0.5 {
+			accentY--
+		} else {
+			accentY++
+		}
+		if accentY%2 != 0 {
+			accentY--
+		}
+		combatPreviewEraseHorizontalMark(canvas, accentX-2, accentY, 5)
+		combatPreviewEraseHorizontalMark(canvas, accentX-1, accentY-1, 3)
+	case combatPreviewThrust:
+		accentX := int(math.Round(centerX + math.Cos(rotation)*6.0))
+		accentY := int(math.Round(centerY + math.Sin(rotation)*4.0))
+		if accentY%2 != 0 {
+			accentY--
+		}
+		combatPreviewEraseHorizontalMark(canvas, accentX-1, accentY, 4)
+	case combatPreviewShoot:
+		accentX := int(math.Round(centerX - 3 + math.Cos(phase*math.Pi*2)*2.2))
+		accentY := int(math.Round(centerY - 1 + math.Sin(phase*math.Pi*2)*1.2))
+		if accentY%2 != 0 {
+			accentY--
+		}
+		combatPreviewEraseHorizontalMark(canvas, accentX-1, accentY, 3)
+	}
+}
+
+func combatPreviewDrawProjectileTrail(canvas *previewCanvas, projectileX, projectileY float64, profile combatPreviewProfile, phase float64) {
+	if canvas == nil || profile.kind != combatPreviewShoot {
+		return
+	}
+
+	headX := int(math.Round(projectileX))
+	headY := int(math.Round(projectileY))
+	if headY%2 != 0 {
+		headY--
+	}
+	combatPreviewEraseHorizontalMark(canvas, headX-1, headY, 4)
+	if phase < 0.5 {
+		combatPreviewEraseHorizontalMark(canvas, headX-2, headY+1, 3)
+	} else {
+		combatPreviewEraseHorizontalMark(canvas, headX-2, headY-1, 3)
+	}
+}
+
+func combatPreviewFillRect(canvas *previewCanvas, x, y, w, h int, px color.RGBA) {
+	if canvas == nil || w <= 0 || h <= 0 {
+		return
+	}
+	for yy := 0; yy < h; yy++ {
+		for xx := 0; xx < w; xx++ {
+			canvas.set(x+xx, y+yy, px)
+		}
+	}
+}
+
+func combatPreviewDrawLine(canvas *previewCanvas, x0, y0, x1, y1 int, px color.RGBA) {
+	if canvas == nil {
+		return
+	}
+
+	dx := int(math.Abs(float64(x1 - x0)))
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	dy := -int(math.Abs(float64(y1 - y0)))
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx + dy
+	for {
+		canvas.set(x0, y0, px)
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 >= dy {
+			err += dy
+			x0 += sx
+		}
+		if e2 <= dx {
+			err += dx
+			y0 += sy
+		}
+	}
+}
+
+func combatPreviewPlaceholderSprite(kind combatPreviewKind) image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+
+	switch kind {
+	case combatPreviewThrust:
+		for x := 1; x < 9; x++ {
+			img.Set(x, 4, color.RGBA{R: 232, G: 219, B: 179, A: 255})
+		}
+		for y := 2; y < 8; y++ {
+			img.Set(7, y, color.RGBA{R: 142, G: 91, B: 58, A: 255})
+		}
+		img.Set(8, 3, color.RGBA{R: 255, G: 228, B: 160, A: 255})
+	case combatPreviewShoot:
+		for y := 4; y < 8; y++ {
+			for x := 1; x < 8; x++ {
+				img.Set(x, y, color.RGBA{R: 94, G: 107, B: 125, A: 255})
+			}
+		}
+		for x := 3; x < 9; x++ {
+			img.Set(x, 5, color.RGBA{R: 190, G: 205, B: 224, A: 255})
+		}
+		img.Set(8, 4, color.RGBA{R: 255, G: 205, B: 88, A: 255})
+	default:
+		for i := 1; i < 9; i++ {
+			img.Set(i, i-1, color.RGBA{R: 211, G: 226, B: 245, A: 255})
+			if i < 7 {
+				img.Set(i, i, color.RGBA{R: 108, G: 138, B: 191, A: 255})
+			}
+		}
+		img.Set(2, 6, color.RGBA{R: 255, G: 248, B: 227, A: 255})
+	}
+
+	return img
+}
