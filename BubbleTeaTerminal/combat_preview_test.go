@@ -257,3 +257,30 @@ func TestRenderCombatPreviewFrameChangesWithTick(t *testing.T) {
 		t.Fatal("rendered frame did not change with tick")
 	}
 }
+
+func TestRenderCombatPreviewUsesFixedCanvasForWidthGuard(t *testing.T) {
+	itemPath := writeTestSprite(t, 8, 8, func(img *image.RGBA) {
+		for y := 1; y < 7; y++ {
+			for x := 2; x < 6; x++ {
+				img.Set(x, y, color.RGBA{R: 70, G: 170, B: 240, A: 255})
+			}
+		}
+	})
+
+	item := craftedItem{
+		contentType: "Weapon",
+		subType:     "Sword",
+		stats:       itemStats{UseTime: 18},
+		spritePath:  itemPath,
+	}
+
+	full := renderCombatPreview(item, nil, 0, 72)
+	narrow := renderCombatPreview(item, nil, 0, 71)
+
+	if full == "" {
+		t.Fatal("full-width preview should render")
+	}
+	if narrow != "" {
+		t.Fatalf("narrow preview should be empty, got %q", narrow)
+	}
+}

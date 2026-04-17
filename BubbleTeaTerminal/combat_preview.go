@@ -353,22 +353,13 @@ func renderCombatPreview(item craftedItem, manifest map[string]interface{}, tick
 	const (
 		previewCanvasWidth  = 72
 		previewCanvasHeight = 32
-		minUsefulWidth      = 18
 	)
 
-	if maxWidth > 0 && maxWidth < minUsefulWidth {
+	if maxWidth > 0 && maxWidth < previewCanvasWidth {
 		return ""
 	}
 
-	canvasWidth := previewCanvasWidth
-	if maxWidth > 0 && maxWidth < canvasWidth {
-		canvasWidth = maxWidth
-	}
-	if canvasWidth <= 0 {
-		return ""
-	}
-
-	canvas := newPreviewCanvas(canvasWidth, previewCanvasHeight, color.RGBA{R: 14, G: 18, B: 24, A: 255})
+	canvas := newPreviewCanvas(previewCanvasWidth, previewCanvasHeight, color.RGBA{R: 14, G: 18, B: 24, A: 255})
 	combatPreviewPaintArena(canvas)
 
 	profile := combatPreviewProfileFor(item, manifest)
@@ -379,7 +370,7 @@ func renderCombatPreview(item craftedItem, manifest map[string]interface{}, tick
 	normalizedTick := combatPreviewNormalizeTick(tick, loopTicks)
 	phase := float64(normalizedTick) / float64(loopTicks)
 
-	handX := float64(canvasWidth) * 0.23
+	handX := float64(previewCanvasWidth) * 0.23
 	handY := float64(canvas.h) - 11
 	playerX := handX - 7
 	playerTop := handY - 9
