@@ -119,18 +119,23 @@ func (m model) forgeView() string {
 			"",
 			styles.Body.Render(m.forgeErr),
 			"",
-			styles.Hint.Render("Esc to go back"),
+			styles.Hint.Render("r to retry  ·  Esc to go back"),
 		}, "\n")
 	}
 	label := m.stageLabel
 	if label == "" {
 		label = forgeVerbs[m.lastForgeVerb%len(forgeVerbs)] + "..."
 	}
+	elapsed := fmtElapsed(m.operationStartedAt)
+	elapsedStr := ""
+	if elapsed != "" {
+		elapsedStr = "  " + styles.Hint.Render(elapsed)
+	}
 	return strings.Join([]string{
 		styles.TitleRune.Render("The Forge"),
 		styles.Progress.Render("Heat " + m.heatBar()),
 		"",
-		fmt.Sprintf("%s %s", m.spinner.View(), styles.Subtitle.Render(label)),
+		fmt.Sprintf("%s %s%s", m.spinner.View(), styles.Subtitle.Render(label), elapsedStr),
 		"",
 		styles.Hint.Render("Architecting manifest and forging sprite"),
 	}, "\n")

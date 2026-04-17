@@ -94,11 +94,11 @@ func TestInitialModelOmitsStandalonePromptFormInStartupView(t *testing.T) {
 		t.Fatalf("startup view = %q, want it to omit the legacy standalone prompt form from the main body", got)
 	}
 	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if len(lines) < 2 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), ">") {
-		t.Fatalf("startup view = %q, want a raw terminal-style prompt line at the bottom", got)
+	if len(lines) < 2 || !strings.Contains(lines[len(lines)-1], "─") {
+		t.Fatalf("startup view = %q, want a separator line at the bottom", got)
 	}
-	if !strings.Contains(lines[len(lines)-2], "─") {
-		t.Fatalf("startup view = %q, want a separator line above the prompt", got)
+	if !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-2]), ">") {
+		t.Fatalf("startup view = %q, want prompt line above the separator", got)
 	}
 }
 
@@ -745,7 +745,7 @@ func TestForgeShowsStaleAndTimeoutFeedback(t *testing.T) {
 		updated, _ = m.Update(ipc.PollStatusMsg{})
 		m = updated.(model)
 	}
-	if got := m.View(); !strings.Contains(got, "Still waiting for the forge") {
+	if got := m.View(); !strings.Contains(got, "Forge slow") {
 		t.Fatalf("stale forge view = %q, want stale forge feedback", got)
 	}
 
@@ -773,13 +773,13 @@ func TestSessionShellCommandBarIsPlainTextPrompt(t *testing.T) {
 
 	got := m.View()
 	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if len(lines) < 2 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), ">") {
-		t.Fatalf("command bar render = %q, want a bare terminal prompt line", got)
+	if len(lines) < 2 || !strings.Contains(lines[len(lines)-1], "─") {
+		t.Fatalf("command bar render = %q, want a separator line at the bottom", got)
 	}
-	if !strings.Contains(lines[len(lines)-2], "─") {
-		t.Fatalf("command bar render = %q, want a separator line above the prompt", got)
+	if !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-2]), ">") {
+		t.Fatalf("command bar render = %q, want prompt line above the separator", got)
 	}
-	if strings.Contains(lines[len(lines)-1], "Describe your forged item") {
+	if strings.Contains(lines[len(lines)-2], "Describe your forged item") {
 		t.Fatalf("command bar render = %q, want no placeholder text in the prompt line", got)
 	}
 }
@@ -1216,6 +1216,37 @@ func TestTopStatusBarShowsRuntimeOfflineWhenBridgeDown(t *testing.T) {
 	got := m.View()
 	if !strings.Contains(got, "offline") {
 		t.Fatalf("view = %q, want 'offline' in status bar when bridge is down", got)
+	}
+}
+
+func TestForgeViewShowsElapsedWhenForging(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.state = screenForge
+	m.operationKind = operationForging
+	m.operationStartedAt = time.Now().UTC().Add(-15 * time.Second)
+	m.stageLabel = "Architecting"
+
+	view := m.forgeView()
+	if !strings.Contains(view, "15s") && !strings.Contains(view, "14s") {
+		t.Fatalf("forgeView() = %q, want elapsed time visible during forge", view)
+	}
+}
+
+func TestRenderOperationLineStaleIsActionable(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.operationKind = operationForging
+	m.operationStale = true
+	m.operationStartedAt = time.Now().UTC().Add(-30 * time.Second)
+	m.operationLabel = "radiant sword"
+
+	line := renderOperationLine(m)
+	if !strings.Contains(line, "Esc") {
+		t.Fatalf("renderOperationLine stale = %q, want Esc hint", line)
+	}
+	if !strings.Contains(line, "slow") && !strings.Contains(line, "Slow") {
+		t.Fatalf("renderOperationLine stale = %q, want 'slow' language", line)
 	}
 }
 

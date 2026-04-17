@@ -230,13 +230,13 @@ const forgeVersion = "v0.1.0"
 // Replace the artLines below with your own pixel art.
 func renderSplash(m model) string {
 	artStyle := lipgloss.NewStyle().Foreground(colorGold)
-	// Placeholder art — swap these lines for custom pixel art.
+	// Terraria-style pixel tree.
 	artLines := []string{
-		artStyle.Render(" ▄██████▄ "),
-		artStyle.Render(" ██    ██ "),
-		artStyle.Render(" ████████ "),
-		artStyle.Render("  ██████  "),
-		artStyle.Render("   ████   "),
+		artStyle.Render("   ▄█▄   "),
+		artStyle.Render("  █████  "),
+		artStyle.Render(" ███████ "),
+		artStyle.Render("█████████"),
+		artStyle.Render("   ███   "),
 	}
 	art := lipgloss.NewStyle().PaddingRight(2).Render(strings.Join(artLines, "\n"))
 
@@ -305,7 +305,7 @@ func renderOperationLine(m model) string {
 			label = "item"
 		}
 		if m.operationStale {
-			return styles.Hint.Render("Still waiting for the forge...") + elapsedSuffix
+			return styles.Hint.Render("Forge slow — Esc to cancel") + elapsedSuffix
 		}
 		stageLabel := strings.TrimSpace(m.stageLabel)
 		detail := label
@@ -341,15 +341,20 @@ func (s sessionShellState) renderPinnedMemoryBlock() string {
 }
 
 func (s sessionShellState) renderCommandBar(m model) string {
-	width := shellContentWidth(m)
+	var sepWidth int
+	if m.width > 0 {
+		sepWidth = max(1, m.width-2)
+	} else {
+		sepWidth = shellContentWidth(m)
+	}
 	hintText := "/ for commands · esc to cancel · ctrl+c to quit"
-	if len(hintText) > width {
-		hintText = hintText[:width]
+	if len(hintText) > sepWidth {
+		hintText = hintText[:sepWidth]
 	}
 	hint := styles.Hint.Render(hintText)
-	sep := styles.Hint.Render(strings.Repeat("─", width))
+	sep := styles.Hint.Render(strings.Repeat("─", sepWidth))
 	prompt := styles.Meta.Render(">") + " " + m.commandInput.View()
-	return strings.Join([]string{hint, sep, prompt}, "\n")
+	return strings.Join([]string{hint, sep, prompt, sep}, "\n")
 }
 
 func shellContentWidth(m model) int {
