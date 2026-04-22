@@ -175,6 +175,68 @@ class ArchitectManifestTests(unittest.TestCase):
 
         self.assertEqual(manifest.mechanics.shoot_projectile, "ProjectileID.BallofFire")
 
+    def test_llm_returning_sword_does_not_override_orchestrator_gun_sub_type(self) -> None:
+        """Regression: LLM's Sword default must not win over orchestrator-inferred Gun."""
+        class FakePrompt:
+            def __or__(self, other):
+                return FakeChain()
+
+        class FakeChain:
+            def invoke(self, payload):
+                # Simulate the biased LLM always returning "Sword"
+                return mock.Mock(
+                    model_dump=lambda: {
+                        "item_name": "Frostgun",
+                        "display_name": "Frostgun",
+                        "tooltip": "Fires frost bullets.",
+                        "content_type": "Weapon",
+                        "type": "Weapon",
+                        "sub_type": "Sword",
+                        "stats": {
+                            "damage": 15,
+                            "knockback": 3.0,
+                            "crit_chance": 4,
+                            "use_time": 20,
+                            "auto_reuse": True,
+                            "rarity": "ItemRarityID.White",
+                        },
+                        "visuals": {},
+                        "mechanics": {
+                            "crafting_material": "ItemID.IceBlock",
+                            "crafting_cost": 5,
+                            "crafting_tile": "TileID.WorkBenches",
+                        },
+                        "generation_mode": "text_to_image",
+                        "reference_needed": False,
+                        "reference_subject": None,
+                        "reference_image_url": None,
+                        "reference_attempts": 0,
+                        "reference_notes": None,
+                    }
+                )
+
+        class FakeLLM:
+            def with_structured_output(self, model):
+                return self
+
+        with mock.patch.object(architect_prompts, "build_prompt", return_value=FakePrompt()), \
+             mock.patch("architect.architect.ChatOpenAI", return_value=FakeLLM()), \
+             mock.patch("architect.architect.BrowserReferenceFinder", autospec=True), \
+             mock.patch("architect.architect.HybridReferenceApprover", autospec=True), \
+             mock.patch("architect.architect.ReferencePolicy", autospec=True) as reference_policy_cls:
+            reference_policy_cls.return_value.resolve.return_value = {}
+            from architect.architect import ArchitectAgent
+
+            agent = ArchitectAgent(model_name="test-model")
+            manifest = agent.generate_manifest(
+                prompt="a frostgun that fires ice bullets",
+                tier="Tier1_Starter",
+                content_type="Weapon",
+                sub_type="Gun",  # orchestrator-resolved
+            )
+
+        self.assertEqual(manifest["sub_type"], "Gun")
+
 
 class OrchestratorRequestTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_pipeline_forwards_content_type_and_sub_type(self) -> None:

@@ -128,7 +128,7 @@ class ArchitectAgent:
         prompt: str,
         tier: str,
         content_type: str = "Weapon",
-        sub_type: str = "Sword",
+        sub_type: str = "",
         crafting_station: str | None = None,
     ) -> dict:
         """Generate a fully validated item manifest.
@@ -392,7 +392,7 @@ class ArchitectAgent:
     ) -> dict:
         crafting = resolve_crafting(prompt, tier, crafting_station)
         data["content_type"] = content_type
-        data["sub_type"] = str(data.get("sub_type") or sub_type)
+        data["sub_type"] = sub_type or prompt_router.DEFAULT_SUB_TYPES.get(content_type, "Sword")
         data.setdefault("type", content_type)
         data.setdefault("mechanics", {})
         llm_crafting = data.get("mechanics", {})

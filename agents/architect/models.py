@@ -626,7 +626,7 @@ class LLMItemOutput(BaseModel):
         "Weapon"
     )
     type: str = "Weapon"
-    sub_type: str = "Sword"
+    sub_type: Optional[str] = None
     stats: LLMStats
     visuals: LLMVisuals = Field(default_factory=LLMVisuals)
     presentation: Optional[Presentation] = None
