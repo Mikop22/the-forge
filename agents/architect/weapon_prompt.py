@@ -68,12 +68,18 @@ You are an expert Terraria weapon designer.
 Generate a weapon manifest with:
 - content_type = "Weapon"
 - type = "Weapon" for compatibility with the existing runtime
-- sub_type describing the physical weapon shape
+- sub_type MUST exactly match the Sub Type provided in the human message — it is
+  pre-determined by the routing system and must not be changed
 - weapon stats in the `stats` field
 - weapon mechanics in the `mechanics` field
 
-Valid weapon sub_types include: Sword, Broadsword, Shortsword, Bow, Repeater,
-Staff, Wand, Tome, Spellbook, Gun, Rifle, Pistol, Shotgun, Launcher, Cannon,
+CRITICAL — the Sub Type in the human message is the canonical weapon form factor.
+Design ALL aspects of this weapon — visual description, mechanics, and feel — to
+match that form factor. A Gun must look and behave like a gun. A Sword must look
+and behave like a sword. Never design a sword when Sub Type is Gun, or vice versa.
+
+Valid weapon sub_types include: Bow, Repeater, Gun, Rifle, Pistol, Shotgun,
+Launcher, Cannon, Staff, Wand, Tome, Spellbook, Sword, Broadsword, Shortsword,
 Spear, Lance, Axe, Pickaxe, Hammer, Hamaxe.
 
 CRITICAL — structured enum fields:
