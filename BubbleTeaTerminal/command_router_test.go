@@ -133,6 +133,32 @@ func TestWorkshopCommandRestoreTypoFailsClosed(t *testing.T) {
 	}
 }
 
+func TestWorkshopCommandInvalidRestoreShowsUsageNotice(t *testing.T) {
+	tests := []string{"/restore", "/restore typo"}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+
+			m := initialModel()
+			m.workshop.Bench = workshopBench{ItemID: "storm-brand", Label: "Storm Brand"}
+
+			nextModel, _ := m.handleShellCommand(input)
+			next := nextModel.(model)
+
+			if next.workshopNotice != "Usage: /restore baseline | live" {
+				t.Fatalf("workshopNotice = %q, want restore usage", next.workshopNotice)
+			}
+			if next.shellError != "Usage: /restore baseline | live" {
+				t.Fatalf("shellError = %q, want restore usage", next.shellError)
+			}
+			if next.errMsg != "Usage: /restore baseline | live" {
+				t.Fatalf("errMsg = %q, want restore usage", next.errMsg)
+			}
+		})
+	}
+}
+
 func TestWorkshopCommandBenchResolvesShelfIndexToVariantID(t *testing.T) {
 	shelf := []workshopVariant{
 		{VariantID: "storm-brand-a"},

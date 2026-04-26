@@ -92,7 +92,7 @@ func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVar
 	case "restore":
 		target, ok := normalizeRestoreTarget(arg)
 		if !ok {
-			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+			return commandRoute{Action: commandActionUnsupported, Directive: arg, Usage: "Usage: /restore baseline | live"}
 		}
 		return commandRoute{Action: commandActionRestore, RestoreTarget: target}
 	case "try":
