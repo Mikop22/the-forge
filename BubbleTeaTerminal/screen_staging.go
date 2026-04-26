@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	_ "image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -322,14 +324,6 @@ func (m model) stagingView() string {
 		}
 
 		if m.revealPhase >= 3 {
-			if !m.termCompact {
-				if preview := renderCombatPreview(latest, m.forgeManifest, m.animTick, m.contentWidth); preview != "" {
-					headerLines = append(headerLines, "")
-					headerLines = append(headerLines, styles.SpriteFrame.Render(styles.Meta.Render("Combat Preview")))
-					headerLines = append(headerLines, preview)
-				}
-			}
-
 			sprite := renderSprite(latest.spritePath)
 			projSprite := renderSprite(latest.projSpritePath)
 			stats := renderStats(latest.stats)
@@ -338,8 +332,7 @@ func (m model) stagingView() string {
 				headerLines = append(headerLines, "")
 				var panels []string
 				if sprite != "" {
-					spriteBox := styles.SpriteFrame.Render(sprite)
-					panels = append(panels, spriteBox)
+					panels = append(panels, styles.SpriteFrame.Render(sprite))
 				}
 				if projSprite != "" {
 					arrow := styles.Hint.Render("→")
@@ -430,8 +423,7 @@ func (m model) stagingView() string {
 			}
 			headerLines = append(headerLines, styles.Hint.Render("↑/↓ field  •  ←/→ adjust  •  Enter done"))
 		default:
-			headerLines = append(headerLines, "", styles.Hint.Render("[R] Reprompt sprite   [S] Tweak stats   [A] Accept & Inject   [D] Discard   [C] Reset"))
-			headerLines = append(headerLines, styles.Hint.Render("Tab or / opens the director command bar"))
+			headerLines = append(headerLines, "", styles.Hint.Render("Tab or / opens the director command bar"))
 			if m.commandMode {
 				headerLines = append(headerLines, "", styles.Subtitle.Render("Director"))
 				headerLines = append(headerLines, styles.PromptInput.Render(m.commandInput.View()))
@@ -664,11 +656,57 @@ func isTransparent(c color.Color) bool {
 // foreground, bottom pixel as background. Transparent pixels use the
 // terminal default. Sprites are typically 32×32 or 64×64.
 func renderSprite(path string) string {
-	img, ok := loadPreviewSprite(path)
+	img, ok := loadSpriteImage(path)
 	if !ok {
 		return ""
 	}
 	return renderSpriteImage(img)
+}
+
+func loadSpriteImage(path string) (image.Image, bool) {
+	if path == "" {
+		return nil, false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+
+	img, _, err := image.Decode(f)
+	if err != nil {
+		return nil, false
+	}
+
+	bounds := img.Bounds()
+	minX, minY, maxX, maxY := bounds.Max.X, bounds.Max.Y, bounds.Min.X, bounds.Min.Y
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if !isTransparent(img.At(x, y)) {
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	if maxX < minX || maxY < minY {
+		return nil, false
+	}
+
+	cropRect := image.Rect(0, 0, maxX-minX+1, maxY-minY+1)
+	cropped := image.NewRGBA(cropRect)
+	draw.Draw(cropped, cropRect, img, image.Point{X: minX, Y: minY}, draw.Src)
+	return cropped, true
 }
 
 func renderSpriteImage(img image.Image) string {

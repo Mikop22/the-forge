@@ -66,8 +66,11 @@ func TestStagingViewHidesHealthyIdleRuntimeDetails(t *testing.T) {
 	if strings.Contains(view, "Runtime Online") || strings.Contains(view, "World Loaded") {
 		t.Fatalf("stagingView() = %q, want healthy idle runtime details hidden", view)
 	}
-	if !strings.Contains(view, "[R] Reprompt sprite") {
-		t.Fatalf("stagingView() = %q, want action hints to stay visible", view)
+	if strings.Contains(view, "[R] Reprompt sprite") {
+		t.Fatalf("stagingView() = %q, want legacy action hints removed", view)
+	}
+	if !strings.Contains(view, "Tab or / opens the director command bar") {
+		t.Fatalf("stagingView() = %q, want director command bar hint visible", view)
 	}
 }
 

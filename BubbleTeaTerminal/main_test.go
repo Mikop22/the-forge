@@ -554,27 +554,6 @@ func stagingPreviewTestModel(t *testing.T, compact bool, contentWidth int) model
 	return m
 }
 
-func TestStagingViewRendersCombatPreviewForBenchItem(t *testing.T) {
-	m := stagingPreviewTestModel(t, false, 96)
-
-	got := m.stagingView()
-	if !strings.Contains(got, "Combat Preview") {
-		t.Fatalf("stagingView() = %q, want Combat Preview panel for the bench item", got)
-	}
-}
-
-func TestStagingViewHidesCombatPreviewInVeryCompactTerminal(t *testing.T) {
-	m := stagingPreviewTestModel(t, true, 36)
-
-	got := m.stagingView()
-	if strings.Contains(got, "Combat Preview") {
-		t.Fatalf("stagingView() = %q, want compact terminals to omit the combat preview", got)
-	}
-	if !strings.Contains(got, "Storm Brand") || !strings.Contains(got, "Stats") {
-		t.Fatalf("stagingView() = %q, want compact staging to keep the static bench panels", got)
-	}
-}
-
 func TestStagingViewPreviewLinesDoNotExceedTerminalWidth(t *testing.T) {
 	m := stagingPreviewTestModel(t, false, 96)
 
