@@ -67,3 +67,7 @@ BubbleTeaTerminal/.serena/
 # Misc
 *.log
 Thumbs.db
+
+# Local probe / sweep scripts (developer-only)
+agents/param_sweep.py
+agents/probe_enrichment.py

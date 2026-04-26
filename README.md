@@ -3,6 +3,8 @@
 <img width="972" height="503" alt="Screenshot 2026-04-12 at 11 35 37 PM" src="https://github.com/user-attachments/assets/976c9d18-2e84-4e81-893c-3abf445628df" />
 
 
+**Claude Code for Terraria** — describe a weapon, watch The Forge turn it into a live Terraria item.
+
 Describe an item, and The Forge can design it, generate art, build the mod output, and inject it live into a running terraria world.
 
 ![Go](https://img.shields.io/badge/TUI-Go%20%2F%20BubbleTea-00ADD8)
@@ -60,7 +62,14 @@ cd the-forge
 
 ### 2. API keys: *pending local mode for those of you with cool gpus*
 
-Create `agents/.env`:
+Copy the template and fill in your keys:
+
+```bash
+cp agents/.env.example agents/.env
+# then edit agents/.env in your editor
+```
+
+Required keys:
 
 ```env
 OPENAI_API_KEY=your-openai-key
@@ -144,6 +153,16 @@ Only one orchestrator may run per `ModSources` tree. The lock file is:
 ```text
 ModSources/.forge_orchestrator.lock
 ```
+
+## Demo Prompt
+
+For a first run, this prompt is known to land cleanly through every gate:
+
+```
+Storm Brand — a long sword wreathed in crackling cobalt lightning, with arcing electric runes along the blade
+```
+
+Type it on the input screen, choose `Auto`, and watch the pipeline work end-to-end.
 
 ## Using The TUI
 
