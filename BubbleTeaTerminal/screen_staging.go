@@ -343,7 +343,7 @@ func (m model) stagingView() string {
 					statsBox := styles.StatsFrame.Render(stats)
 					panels = append(panels, statsBox)
 				}
-				if m.contentWidth > 0 && m.contentWidth < 90 {
+				if m.contentWidth > 0 && m.contentWidth < 110 {
 					headerLines = append(headerLines, panels...)
 				} else {
 					headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top, panels...))

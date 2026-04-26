@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -554,6 +557,29 @@ func stagingPreviewTestModel(t *testing.T, compact bool, contentWidth int) model
 	return m
 }
 
+func writeStagingPreviewSprite(t *testing.T, dir string, name string) string {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			img.Set(x, y, color.RGBA{R: 80, G: 220, B: 128, A: 255})
+		}
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create preview sprite: %v", err)
+	}
+	defer file.Close()
+
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("encode preview sprite: %v", err)
+	}
+	return path
+}
+
 func TestStagingViewPreviewLinesDoNotExceedTerminalWidth(t *testing.T) {
 	m := stagingPreviewTestModel(t, false, 96)
 
@@ -561,6 +587,31 @@ func TestStagingViewPreviewLinesDoNotExceedTerminalWidth(t *testing.T) {
 	for i, line := range strings.Split(got, "\n") {
 		if width := lipgloss.Width(line); width > m.contentWidth {
 			t.Fatalf("stagingView line %d width = %d, want <= %d\n%s", i, width, m.contentWidth, got)
+		}
+	}
+}
+
+func TestStagingViewPreviewPanelsStackAt100Columns(t *testing.T) {
+	m := stagingPreviewTestModel(t, false, 100)
+	spriteDir := t.TempDir()
+	m.previewItem.spritePath = writeStagingPreviewSprite(t, spriteDir, "item.png")
+	m.previewItem.projSpritePath = writeStagingPreviewSprite(t, spriteDir, "projectile.png")
+
+	spritePanel := styles.SpriteFrame.Render(renderSprite(m.previewItem.spritePath))
+	projectilePanel := styles.SpriteFrame.Render(renderSprite(m.previewItem.projSpritePath))
+	statsPanel := styles.StatsFrame.Render(renderStats(m.previewItem.stats))
+	horizontalWidth := lipgloss.Width(lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		spritePanel,
+		styles.Hint.Render("→"),
+		projectilePanel,
+		statsPanel,
+	))
+
+	got := m.stagingView()
+	for i, line := range strings.Split(got, "\n") {
+		if width := lipgloss.Width(line); width >= horizontalWidth {
+			t.Fatalf("stagingView line %d width = %d, want stacked panels narrower than horizontal width %d\n%s", i, width, horizontalWidth, got)
 		}
 	}
 }
