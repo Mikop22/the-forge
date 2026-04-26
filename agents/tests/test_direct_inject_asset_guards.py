@@ -76,7 +76,7 @@ def test_generate_asset_rejects_item_that_fails_deterministic_sprite_gates(
 
     assert result["status"] == "error"
     assert "item sprite failed deterministic sprite gates" in result["error"][
-        "message"
+        "detail"
     ]
 
 
@@ -98,7 +98,7 @@ def test_generate_asset_rejects_projectile_that_fails_deterministic_sprite_gates
 
     assert result["status"] == "error"
     assert "projectile sprite failed deterministic sprite gates" in result["error"][
-        "message"
+        "detail"
     ]
 
 

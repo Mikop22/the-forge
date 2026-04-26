@@ -457,7 +457,11 @@ class ArtistAgent:
             logger.exception("Generation failed for %s", parsed.item_name)
             return PixelsmithOutput(
                 status="error",
-                error=PixelsmithError(code="GENERATION", message=friendly_generation_error(str(exc))),
+                error=PixelsmithError(
+                    code="GENERATION",
+                    message=friendly_generation_error(str(exc)),
+                    detail=str(exc),
+                ),
             ).model_dump()
 
     def generate_hidden_audition_finalists(

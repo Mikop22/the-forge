@@ -131,6 +131,10 @@ class PixelsmithError(BaseModel):
         description="Short error category, e.g. 'GENERATION', 'PROCESSING'."
     )
     message: str = Field(description="Human-readable failure description.")
+    detail: Optional[str] = Field(
+        default=None,
+        description="Raw technical message (preserved for tests/debugging).",
+    )
 
 
 class PixelsmithOutput(BaseModel):
