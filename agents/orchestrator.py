@@ -717,8 +717,54 @@ def _request_content_type(request: dict[str, Any]) -> str:
     return str(request.get("content_type") or "Weapon")
 
 
+# Ordered: longer/more-specific keywords before their substrings
+# (e.g. "pickaxe" before "axe", "shotgun" before "gun", "broadsword" before "sword").
+# Substring matching is intentional so compound words like "frostgun" still
+# route to Gun — do NOT change to word-boundary regex without reworking this.
+_WEAPON_SUBTYPE_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("shortsword",), "Shortsword"),
+    (("broadsword", "greatsword", "longsword"), "Broadsword"),
+    (("spellbook",), "Spellbook"),
+    (("shotgun",), "Shotgun"),
+    (("repeater", "crossbow"), "Repeater"),
+    (("launcher",), "Launcher"),
+    (("cannon",), "Cannon"),
+    (("rifle", "musket"), "Rifle"),
+    (("pistol", "revolver"), "Pistol"),
+    (("hamaxe",), "Hamaxe"),
+    (("pickaxe",), "Pickaxe"),
+    (("hammer",), "Hammer"),
+    (("spear", "trident"), "Spear"),
+    (("lance",), "Lance"),
+    (("staff", "scepter"), "Staff"),
+    (("wand",), "Wand"),
+    (("tome", "grimoire"), "Tome"),
+    (("bow",), "Bow"),
+    (("gun", "blaster"), "Gun"),
+    (("axe",), "Axe"),
+    (("sword", "blade", "saber", "katana"), "Sword"),
+)
+
+
+def _infer_weapon_sub_type(prompt: str) -> str | None:
+    """Return a weapon sub_type inferred from keywords in prompt, or None."""
+    lowered = prompt.lower()
+    for keywords, sub_type in _WEAPON_SUBTYPE_KEYWORDS:
+        for keyword in keywords:
+            if keyword in lowered:
+                return sub_type
+    return None
+
+
 def _request_sub_type(request: dict[str, Any]) -> str:
-    return str(request.get("sub_type") or "Sword")
+    explicit = str(request.get("sub_type") or "").strip()
+    if explicit:
+        return explicit
+    if _request_content_type(request).strip().lower() != "weapon":
+        # Let architect.prompts.DEFAULT_SUB_TYPES supply the per-content-type default.
+        return ""
+    inferred = _infer_weapon_sub_type(str(request.get("prompt") or ""))
+    return inferred or "Sword"
 
 
 def _request_uses_hidden_audition(request: dict[str, Any]) -> bool:

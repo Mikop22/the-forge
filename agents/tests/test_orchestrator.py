@@ -97,5 +97,61 @@ class StatusWriterTests(unittest.TestCase):
             self.assertEqual(payload["status"], "building")
 
 
+class RequestSubTypeInferenceTests(unittest.TestCase):
+    """Keyword inference for weapon sub_type when the TUI sends it empty."""
+
+    def test_explicit_sub_type_passes_through_unchanged(self) -> None:
+        req = {"prompt": "frostgun", "content_type": "Weapon", "sub_type": "Staff"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Staff")
+
+    def test_frostgun_prompt_infers_gun(self) -> None:
+        req = {"prompt": "frostgun", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Gun")
+
+    def test_ice_bow_prompt_infers_bow(self) -> None:
+        req = {"prompt": "icy elven bow", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Bow")
+
+    def test_obsidian_pickaxe_prompt_infers_pickaxe(self) -> None:
+        # "pickaxe" must win over the "axe" substring inside it.
+        req = {"prompt": "obsidian pickaxe", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Pickaxe")
+
+    def test_shotgun_prompt_infers_shotgun_not_gun(self) -> None:
+        req = {"prompt": "blizzard shotgun", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Shotgun")
+
+    def test_broadsword_prompt_infers_broadsword_not_sword(self) -> None:
+        req = {"prompt": "ancient broadsword of dawn", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Broadsword")
+
+    def test_case_insensitive(self) -> None:
+        req = {"prompt": "FROSTGUN", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Gun")
+
+    def test_ambiguous_prompt_falls_back_to_sword(self) -> None:
+        # No recognizable weapon noun — preserve current default behavior.
+        req = {"prompt": "radiant moonlight artifact", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Sword")
+
+    def test_empty_prompt_falls_back_to_sword(self) -> None:
+        req = {"prompt": "", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Sword")
+
+    def test_multi_keyword_prompt_resolves_by_registry_order(self) -> None:
+        # "bladed spear" contains both "blade" (→ Sword, low priority) and
+        # "spear" (→ Spear, higher priority). Pins the ordering contract so
+        # future edits to _WEAPON_SUBTYPE_KEYWORDS can't silently flip precedence.
+        req = {"prompt": "bladed spear", "content_type": "Weapon"}
+        self.assertEqual(orchestrator._request_sub_type(req), "Spear")
+
+    def test_inference_skipped_for_non_weapon_content_type(self) -> None:
+        # Tool/Accessory/etc. have their own DEFAULT_SUB_TYPES downstream in
+        # architect.prompts. Orchestrator must not stamp "Gun" on a Tool request
+        # just because the prompt contains "gun".
+        req = {"prompt": "frostgun", "content_type": "Tool"}
+        self.assertEqual(orchestrator._request_sub_type(req), "")
+
+
 if __name__ == "__main__":
     unittest.main()
