@@ -73,8 +73,12 @@ Run this top-to-bottom **before** hitting record. Goal: prove the full forge →
 
 ## Backup demo prompts (if Storm Brand misbehaves on the day)
 
-- `Frostgun — a steam-powered ice shotgun with frost-rimed brass barrels and a turquoise crystal chamber`
-- `Obsidian Pickaxe — a heavy black pickaxe with glowing magma cracks running through the head`
-- `Verdant Bow — a sleek elven longbow carved from living oak, with leaves curled around the grip`
+- `Thundering Broadsword of Dawn — a radiant storm-forged broadsword that crackles with morning lightning` (sword family, paired with Storm Brand on stats but visually distinct)
+- `Frost Staff of the Glacier — a long ice-carved staff crowned with a faceted glacier crystal` (Tier C verified: passes gates, generates projectile sprite cleanly)
+- `Obsidian Pickaxe with magma cracks` (Tier C verified: passes gates; **show in inventory only — don't try to mine on camera, the sub_type is currently manifested as Weapon not Tool**)
 
-These are picked to hit different sub_type inferences (Gun, Pickaxe, Bow) that the recent orchestrator commit handles.
+**Removed from backups:**
+- ~~`Verdant Bow`~~ — measured 60% sprite-gate failure rate over 5 runs; even when it passes, the silhouette reads as ambiguous. Avoid bows entirely until the `occupancy` gate is recalibrated for thin shapes.
+- ~~`Frostgun`~~ — ranged sub_types currently have `mechanics.shoot_projectile: null` downstream; the gun would be a silent dud if fired on camera. Safe only if you film inventory + tooltip and never pull the trigger.
+
+These are picked to maximize on-camera reliability, not breadth of sub_type coverage.
