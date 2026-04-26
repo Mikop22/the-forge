@@ -88,6 +88,9 @@ HIDDEN_LAB_RUNTIME_TIMEOUT_S = 90.0
 # Where Pixelsmith drops sprites and Forge Master drops code
 _AGENTS_ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = _AGENTS_ROOT / "output"
+PIXELSMITH_WEIGHTS_PATH = (
+    _AGENTS_ROOT / "pixelsmith" / "terraria_weights.safetensors"
+).resolve()
 WORKSHOP_STORE = WorkshopSessionStore(WORKSHOP_SESSION_DIR)
 
 # ---------------------------------------------------------------------------
@@ -105,6 +108,60 @@ def _write_status(payload: dict) -> None:
     text = json.dumps(payload, indent=2) + "\n"
     _atomic_write_text(STATUS_FILE, text)
     log.info("Status → %s", payload.get("status"))
+
+
+def _fail_preflight(message: str) -> None:
+    status = GenerationStatus(
+        status="error",
+        error_code="PREFLIGHT_FAIL",
+        message=message,
+    )
+    _write_status(status.model_dump(exclude_none=True))
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def _run_preflight_checks() -> None:
+    """Validate required local services and assets before daemon startup."""
+    if not os.environ.get("FAL_KEY", "").strip():
+        _fail_preflight(
+            "Preflight failed: FAL_KEY is not set. Copy agents/.env.example "
+            "to agents/.env and set FAL_KEY."
+        )
+
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        _fail_preflight(
+            "Preflight failed: OPENAI_API_KEY is not set. Copy agents/.env.example "
+            "to agents/.env and set OPENAI_API_KEY."
+        )
+
+    weights_path = PIXELSMITH_WEIGHTS_PATH.resolve()
+    if not weights_path.exists():
+        _fail_preflight(
+            "Preflight failed: Pixelsmith weights file is missing at "
+            f"{weights_path}."
+        )
+
+    try:
+        from playwright.sync_api import sync_playwright
+
+        manager = sync_playwright()
+        playwright = manager.__enter__()
+        try:
+            chromium_path = Path(playwright.chromium.executable_path).resolve()
+        finally:
+            manager.__exit__(None, None, None)
+    except Exception as exc:
+        _fail_preflight(
+            "Preflight failed: Playwright Chromium executable could not be "
+            f"resolved. {exc}"
+        )
+
+    if not chromium_path.exists():
+        _fail_preflight(
+            "Preflight failed: Playwright Chromium executable is missing at "
+            f"{chromium_path}."
+        )
 
 
 def _write_workshop_status(payload: dict[str, Any]) -> None:
@@ -1503,6 +1560,8 @@ class _RequestHandler(FileSystemEventHandler):
 
 
 def main() -> None:
+    _run_preflight_checks()
+
     if Observer is None:
         raise ModuleNotFoundError("watchdog is required to run the orchestrator daemon")
 
