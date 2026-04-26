@@ -34,6 +34,7 @@ type commandRoute struct {
 	Directive     string
 	VariantID     string
 	RestoreTarget string
+	Usage         string
 }
 
 func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVariant) commandRoute {
@@ -69,6 +70,9 @@ func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVar
 		}
 		return commandRoute{Action: commandActionForge, Directive: arg}
 	case "variants":
+		if strings.TrimSpace(arg) == "" {
+			return commandRoute{Action: commandActionUnsupported, Usage: "Usage: /variants <direction>"}
+		}
 		return commandRoute{Action: commandActionVariants, Directive: arg}
 	case "bench":
 		tokens := strings.Fields(arg)
@@ -308,6 +312,8 @@ func (m model) handleShellCommand(raw string) (tea.Model, tea.Cmd) {
 	case commandActionUnsupported:
 		if isEmptyForgeCommand(prompt) {
 			m.shellError = "Prompt cannot be empty."
+		} else if route.Usage != "" {
+			m.shellError = route.Usage
 		} else {
 			m.shellError = "Unsupported command."
 		}

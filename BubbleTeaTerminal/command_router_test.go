@@ -69,6 +69,26 @@ func TestWorkshopCommandEmptyForgeDirectiveShowsValidationError(t *testing.T) {
 	}
 }
 
+func TestWorkshopCommandEmptyVariantsShowsUsageNotice(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+
+	m := initialModel()
+	m.workshop.Bench = workshopBench{ItemID: "storm-brand", Label: "Storm Brand"}
+
+	nextModel, _ := m.handleShellCommand("/variants   ")
+	next := nextModel.(model)
+
+	if next.workshopNotice != "Usage: /variants <direction>" {
+		t.Fatalf("workshopNotice = %q, want variants usage", next.workshopNotice)
+	}
+	if next.shellError != "Usage: /variants <direction>" {
+		t.Fatalf("shellError = %q, want variants usage", next.shellError)
+	}
+	if next.errMsg != "Usage: /variants <direction>" {
+		t.Fatalf("errMsg = %q, want variants usage", next.errMsg)
+	}
+}
+
 func TestWorkshopCommandRestoreLiveMapsToLastLive(t *testing.T) {
 	route := routeWorkshopCommand("/restore live", true, nil)
 
