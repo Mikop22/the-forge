@@ -23,7 +23,7 @@ class RunSafeValidationTests(unittest.TestCase):
                 with mock.patch.object(orchestrator, "run_pipeline") as rp:
                     with mock.patch.object(orchestrator, "run_instant_pipeline") as rip:
                         with mock.patch.object(orchestrator, "_set_error") as se:
-                            await handler._run_safe({"prompt": "x", "mode": "bogus"})
+                            await handler._run_safe(Path("/tmp/user_request.json"), {"prompt": "x", "mode": "bogus"})
                             rp.assert_not_called()
                             rip.assert_not_called()
                             se.assert_called_once()
