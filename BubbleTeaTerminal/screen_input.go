@@ -30,6 +30,21 @@ func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.autocompleteIndex = 0
 				}
 				return m, nil
+			case tea.KeyEnter:
+				if m.autocompleteIndex < len(entries) {
+					selected := entries[m.autocompleteIndex]
+					if selected.ArgHint == "" {
+						// No argument needed — execute immediately.
+						m.commandInput.SetValue("")
+						m.autocompleteIndex = 0
+						return m.handleShellCommand(selected.Slash)
+					}
+					// Argument required — complete into input so user can add it.
+					m.commandInput.SetValue(selected.Slash + " ")
+					m.commandInput.CursorEnd()
+					m.autocompleteIndex = 0
+				}
+				return m, nil
 			case tea.KeyEsc:
 				m.commandInput.SetValue("")
 				m.autocompleteIndex = 0

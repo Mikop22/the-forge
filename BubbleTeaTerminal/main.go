@@ -102,7 +102,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		listWidth := max(1, panelWidth-8)
 		m.modeList.SetWidth(listWidth)
 		m.wizardList.SetWidth(listWidth)
-		m.commandInput.Width = max(1, m.contentWidth-2)
+		m.commandInput.Width = max(1, msg.Width-5)
 		m.textInput.Width = max(1, m.contentWidth-2)
 		m.previewInput.Width = max(1, min(42, m.contentWidth-2))
 	case animTickMsg:
@@ -151,7 +151,7 @@ func (m model) View() string {
 		m.height,
 		lipgloss.Left,
 		lipgloss.Bottom,
-		lipgloss.NewStyle().PaddingLeft(2).Render(panel),
+		lipgloss.NewStyle().PaddingLeft(2).Render(panel+"\n"),
 		lipgloss.WithWhitespaceBackground(colorBg),
 	)
 }

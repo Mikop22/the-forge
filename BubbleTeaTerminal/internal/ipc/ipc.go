@@ -354,6 +354,15 @@ func WriteInjectFile(manifest map[string]interface{}, itemName, spritePath, proj
 	return writeJSONAtomic(filepath.Join(dir, "forge_inject.json"), payload, true)
 }
 
+func ClearWorkshopStatus() error {
+	path := filepath.Join(modsources.Dir(), "workshop_status.json")
+	empty := map[string]interface{}{
+		"bench": map[string]interface{}{},
+		"shelf": []interface{}{},
+	}
+	return writeJSONAtomic(path, empty, false)
+}
+
 func WriteWorkshopRequest(payload map[string]interface{}) error {
 	dir := modsources.Dir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
