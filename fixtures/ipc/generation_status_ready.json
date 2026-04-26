@@ -1,0 +1,12 @@
+{
+  "status": "ready",
+  "stage_label": "Ready",
+  "stage_pct": 100,
+  "batch_list": ["FixtureBlade"],
+  "message": "Fixture ready.",
+  "manifest": {"item_name": "FixtureBlade"},
+  "sprite_path": "Items/FixtureBlade.png",
+  "projectile_sprite_path": null,
+  "inject_mode": true,
+  "error_code": null
+}
