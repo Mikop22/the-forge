@@ -10,6 +10,7 @@ __pycache__/
 venv/
 .env
 .env.*
+!agents/.env.example
 .pytest_cache/
 .mypy_cache/
 *.egg-info/
@@ -51,6 +52,7 @@ agents/output/
 
 # IDE / editor
 .idea/
+BubbleTeaTerminal/.serena/
 *.swp
 *.swo
 *~
