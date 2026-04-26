@@ -48,8 +48,8 @@ class RequestHandlerEventTests(unittest.TestCase):
 
             with mock.patch.object(orchestrator, "REQUEST_FILE", request_file), \
                  mock.patch.object(orchestrator.asyncio, "run_coroutine_threadsafe") as runner:
-                # Process-start monotonic can be under 1s; avoid debouncing the first event.
-                self.handler._last_trigger = time.monotonic() - 2.0
+                key = str(request_file.resolve())
+                self.handler._last_trigger = {key: time.monotonic() - 2.0}
                 self.handler.on_created(FileCreatedEvent(str(request_file)))
 
             self.assertEqual(runner.call_count, 1)
@@ -64,7 +64,8 @@ class RequestHandlerEventTests(unittest.TestCase):
 
             with mock.patch.object(orchestrator, "REQUEST_FILE", request_file), \
                  mock.patch.object(orchestrator.asyncio, "run_coroutine_threadsafe") as runner:
-                self.handler._last_trigger = time.monotonic() - 2.0
+                key = str(request_file.resolve())
+                self.handler._last_trigger = {key: time.monotonic() - 2.0}
                 self.handler.on_moved(FileMovedEvent(str(tmp_request), str(request_file)))
 
             self.assertEqual(runner.call_count, 1)
