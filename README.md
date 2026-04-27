@@ -138,7 +138,7 @@ From `BubbleTeaTerminal/`:
 go run .
 ```
 
-The TUI auto-starts the Python orchestrator.
+The TUI auto-starts the Python orchestrator. If `FAL_KEY`, `OPENAI_API_KEY`, the Pixelsmith weights, or Playwright Chromium are missing, the orchestrator's pre-flight check writes a clear setup error into the forge screen — no silent hang.
 
 ## ModSources Resolution
 
@@ -164,6 +164,8 @@ Storm Brand — a long sword wreathed in crackling cobalt lightning, with arcing
 
 Type it on the input screen, choose `Auto`, and watch the pipeline work end-to-end.
 
+If you want a structured pre-record / dry-run flow with backup prompts and recovery steps, see [docs/superpowers/specs/2026-04-26-demo-dry-run-checklist.md](docs/superpowers/specs/2026-04-26-demo-dry-run-checklist.md).
+
 ## Using The TUI
 
 ### Basic forge flow
@@ -176,21 +178,20 @@ Type it on the input screen, choose `Auto`, and watch the pipeline work end-to-e
 
 ### Workshop flow
 
-On the staging screen:
+On the staging screen, press `/` or `Tab` to open the director command bar. The bar shows an autocomplete drawer with every available command. Pressing Enter on a no-arg command runs it; pressing Enter on a command that takes an argument completes the slash + space so you can type the rest.
 
-- `Enter` or `A`: inject the current bench item
-- `/` or `Tab`: open the director command bar
-- `C`: start another item
-- `R`: reprompt art
-- `S`: tweak stats
-
-The workshop command bar supports the current V1 commands:
-
-- `/variants <direction>`
-- `/bench <variant-id-or-number>`
-- `/try`
-- `/restore baseline`
-- `/restore live`
+| Command | Argument | Effect |
+|---|---|---|
+| `/forge` | `<prompt>` | Generate a new item from scratch |
+| `/variants` | `<describe changes>` | Generate shelf variants from the bench |
+| `/bench` | `<id or number>` | Set a shelf variant as the active bench |
+| `/try` | — | Reinject the current bench item into Terraria |
+| `/restore` | `baseline \| live` | Restore bench to a previous state |
+| `/status` | — | Show bench label and runtime state |
+| `/memory` | — | Show pinned memory notes |
+| `/clear` | — | Clear the active bench and shelf |
+| `/history` | — | List items accepted this session |
+| `/help` | — | List all available commands |
 
 If you type plain natural language into the command bar instead of a slash command, it is treated as a variant-generation direction.
 
@@ -211,6 +212,21 @@ When debugging direct inject, these are also useful:
 - `forge_last_inject.json`
 - `forge_last_inject_debug.json`
 - `ForgeConnectorInjectedAssets/`
+
+## Supported Item Types
+
+The orchestrator infers `sub_type` from prompt keywords (with substring-trap precedence — `pickaxe` beats `axe`, `broadsword` beats `sword`, `shotgun` beats `gun`).
+
+| Class | Sub-types |
+|---|---|
+| Melee | Sword, Broadsword, Shortsword, Spear, Lance |
+| Firearms | Pistol, Shotgun, Rifle, Repeater (uses bullets) |
+| Bows | Bow, Repeater (also crossbow) |
+| Magic | Staff, Wand, Tome, Spellbook (use mana) |
+| Heavy ranged | Launcher (rockets), Cannon (custom) |
+| Tools | Pickaxe, Axe, Hamaxe, Hammer (also deal melee damage) |
+
+All ranged sub-types emit working `Item.shoot` and ammo/mana wiring; tools emit `Item.pick` / `Item.axe` / `Item.hammer` and route through `content_type=Tool` automatically.
 
 ## Power Tiers
 
