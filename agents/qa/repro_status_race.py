@@ -101,6 +101,9 @@ def main() -> int:
     ready_final = sum(1 for r in runs if r["status_after_run"] == "ready")
     stuck = completed - ready_final
     pipeline_errors = sum(1 for r in runs if r["pipeline_error"])
+    # Errors-only runs are inconclusive: nothing reached the final-write
+    # path, so absence of "stuck" doesn't mean the race is absent.
+    inconclusive = completed == 0
 
     out_dir = _AGENTS_DIR / "qa" / "results" / f"repro-status-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S')}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -125,17 +128,34 @@ def main() -> int:
     print(f"Final status=ready:     {ready_final}/{N}")
     print(f"Stuck at non-ready:     {stuck}/{N}")
     print(f"Pipeline errors:        {pipeline_errors}/{N}")
-    if stuck:
+    if inconclusive:
         print()
-        print("⚠  Stuck runs (codex's race hypothesis confirmed):")
+        print("⚠  INCONCLUSIVE — all runs errored before completion. The race")
+        print("   never had a chance to surface. Investigate the pipeline errors")
+        print("   first, then re-run this harness.")
+        print()
+        print("   Errors:")
+        for r in runs:
+            if r["pipeline_error"]:
+                print(f"   run {r['iter']}: {r['pipeline_error'][:120]}")
+    elif stuck:
+        print()
+        print("⚠  Stuck runs (codex's race hypothesis confirmed in production):")
         for r in runs:
             if r["pipeline_error"] is None and r["status_after_run"] != "ready":
                 print(f"   run {r['iter']}: status={r['status_after_run']!r} pct={r['stage_pct']} label={r['stage_label']!r}")
     else:
         print()
-        print("✓  No stuck runs in production-realistic path. Fix 1 is QA-harness-only;")
-        print("   close as 'no production race; document QA limitation in run_qa.py'.")
+        print(f"✓  All {completed} completed runs ended at status=ready. The QA")
+        print("   Tier C 'building 95%' artifact is QA-harness-only; close Fix 1")
+        print("   as 'no production race; document limitation in run_qa.py'.")
     print(f"\nDetails: {out_dir / 'summary.json'}")
+    # Exit codes:
+    #   0 — production is clean (all completed runs ended at ready, at least one completed)
+    #   1 — production race confirmed (≥1 stuck)
+    #   2 — inconclusive (all errors; race never had a chance to surface)
+    if inconclusive:
+        return 2
     return 1 if stuck else 0
 
 

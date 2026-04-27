@@ -6,6 +6,11 @@
 > - Fix 1: original "import-time vs dynamic" diagnosis is **wrong** — `mod_sources_root()` re-resolves per call, but Gatekeeper also caches `self._mod_root` at `__init__` (`agents/gatekeeper/gatekeeper.py:124-132`), and write-ordering under happy path is actually correct. The real cause is unknown; do not implement before reproducing in production.
 > - Fix 2: missed the combat-package lowering layer at `agents/architect/models.py:366-400`. Combat-package weapons set `Item.shoot` directly in C# templates so they "work" despite null `shoot_projectile`. The real gap is non-package ranged sub_types: Pistol, Shotgun, Rifle, Repeater, Wand, Tome, Spellbook, Launcher, Cannon — all missing from snippet subtype maps. Original plan only listed Pistol/Shotgun/Rifle.
 > - Fix 3: not end-to-end. Forge Master has no Tool/Pickaxe codegen mappings, so routing `content_type="Tool"` produces a DIFFERENT failure (no template). Must scope Tool codegen first. Also: the TUI lets users explicitly select `content_type=Weapon`; an unconditional override is a silent intent-breaker. Need request-provenance threading (explicit vs defaulted) before any override is safe.
+>
+> **Codex adversarial review v2 (also folded in).** Three additional findings on the revised plan + repro harness:
+> - Fix 1 harness had a masking flaw: exit 0 when `stuck == 0` even if all runs errored. Now distinguishes `inconclusive` (all errors → exit 2) from `clean` (≥1 ready, exit 0) from `stuck` (≥1 stuck-not-error, exit 1).
+> - Fix 2's 9-item missing list confirmed authoritative (codex re-derived from `agents/forge_master/templates/snippets.py:19,35,1687,1694,1696,1712,1739` and matched).
+> - Fix 3 deferral was self-contradictory: dry-run checklist still listed Obsidian Pickaxe as a backup. **The TUI renders `contentType` in the meta line at `BubbleTeaTerminal/main.go:180,187` and `screen_staging.go:305-307`** — so a Pickaxe-Weapon mismatch would be visible on camera. Pickaxe now banned from dry-run checklist; corpus quarantine pre-flight (`agents/qa/quarantine_check.py`) blocks any banned manifest from reaching the demo. Codex flagged that running QA Tier C left a real `.forge_workshop_sessions/bench-magmafractpickaxe.json` in ModSources with the banned shape — quarantine catches it.
 
 ## The three fixes
 

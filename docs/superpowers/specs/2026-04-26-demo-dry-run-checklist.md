@@ -74,11 +74,22 @@ Run this top-to-bottom **before** hitting record. Goal: prove the full forge →
 ## Backup demo prompts (if Storm Brand misbehaves on the day)
 
 - `Thundering Broadsword of Dawn — a radiant storm-forged broadsword that crackles with morning lightning` (sword family, paired with Storm Brand on stats but visually distinct)
-- `Frost Staff of the Glacier — a long ice-carved staff crowned with a faceted glacier crystal` (Tier C verified: passes gates, generates projectile sprite cleanly)
-- `Obsidian Pickaxe with magma cracks` (Tier C verified: passes gates; **show in inventory only — don't try to mine on camera, the sub_type is currently manifested as Weapon not Tool**)
+- `Frost Staff of the Glacier — a long ice-carved staff crowned with a faceted glacier crystal` (Tier C verified: passes gates, generates projectile sprite cleanly; on-camera safe as long as you don't right-click to cast — `shoot_projectile: null` would surface as a silent dud)
+- `Shortsword of the Bog Wraith — a slim iron blade veined with peat and rot` (Tier1 melee, no projectile concern, sub_type passes Tier A cleanly)
 
-**Removed from backups:**
-- ~~`Verdant Bow`~~ — measured 60% sprite-gate failure rate over 5 runs; even when it passes, the silhouette reads as ambiguous. Avoid bows entirely until the `occupancy` gate is recalibrated for thin shapes.
-- ~~`Frostgun`~~ — ranged sub_types currently have `mechanics.shoot_projectile: null` downstream; the gun would be a silent dud if fired on camera. Safe only if you film inventory + tooltip and never pull the trigger.
+**Banned from demo entirely:**
+- ~~`Verdant Bow`~~ — measured 60% sprite-gate failure rate over 5 runs.
+- ~~`Frostgun`~~ — ranged `shoot_projectile: null` = silent dud if fired on camera.
+- ~~`Obsidian Pickaxe`~~ — manifest is `content_type: "Weapon", tool_stats: null`. The TUI's staging screen renders `contentType` in the meta line (`BubbleTeaTerminal/main.go:180,187`, `screen_staging.go:305-307`), so the mismatch is visible on camera. Per `2026-04-26-product-fixes-plan.md`, Tool codegen is unscoped and Fix 3 is deferred past the demo. **Do not let any Pickaxe item enter the workshop session before recording.**
+
+**Pre-record corpus quarantine check.**
+Before launching the TUI on recording day, run:
+
+```bash
+cd /Users/user/Desktop/the-forge
+python3 agents/qa/quarantine_check.py
+```
+
+The script greps all planned demo prompts, this checklist, and any persisted workshop-session JSON for `sub_type: Pickaxe` paired with `content_type: Weapon`. Non-zero exit means stop and clear state before recording.
 
 These are picked to maximize on-camera reliability, not breadth of sub_type coverage.
