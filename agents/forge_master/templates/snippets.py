@@ -20,7 +20,16 @@ DAMAGE_CLASS_MAP: dict[str, str] = {
     "Sword": "DamageClass.Melee",
     "Gun": "DamageClass.Ranged",
     "Bow": "DamageClass.Ranged",
+    "Pistol": "DamageClass.Ranged",
+    "Shotgun": "DamageClass.Ranged",
+    "Rifle": "DamageClass.Ranged",
+    "Repeater": "DamageClass.Ranged",
     "Staff": "DamageClass.Magic",
+    "Wand": "DamageClass.Magic",
+    "Tome": "DamageClass.Magic",
+    "Spellbook": "DamageClass.Magic",
+    "Launcher": "DamageClass.Ranged",
+    "Cannon": "DamageClass.Ranged",
     "Summon": "DamageClass.Summon",
     "Whip": "DamageClass.SummonMeleeSpeed",
 }
@@ -29,7 +38,16 @@ USE_STYLE_MAP: dict[str, str] = {
     "Sword": "ItemUseStyleID.Swing",
     "Gun": "ItemUseStyleID.Shoot",
     "Bow": "ItemUseStyleID.Shoot",
+    "Pistol": "ItemUseStyleID.Shoot",
+    "Shotgun": "ItemUseStyleID.Shoot",
+    "Rifle": "ItemUseStyleID.Shoot",
+    "Repeater": "ItemUseStyleID.Shoot",
     "Staff": "ItemUseStyleID.Shoot",
+    "Wand": "ItemUseStyleID.Shoot",
+    "Tome": "ItemUseStyleID.Shoot",
+    "Spellbook": "ItemUseStyleID.Shoot",
+    "Launcher": "ItemUseStyleID.Shoot",
+    "Cannon": "ItemUseStyleID.Shoot",
     "Summon": "ItemUseStyleID.Swing",
     "Whip": "ItemUseStyleID.Swing",
 }
@@ -1018,6 +1036,361 @@ namespace ForgeGeneratedMod.Content.Items.Weapons
     }
 }"""
 
+PISTOL_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExamplePistol : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 42;
+            Item.height = 24;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 12;
+            Item.useAnimation = 12;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 18;
+            Item.knockBack = 3f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.Bullet;
+            Item.shootSpeed = 11f;
+            Item.useAmmo = AmmoID.Bullet;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item11;
+        }
+
+        public override Vector2? HoldoutOffset()
+        {
+            return new Vector2(2f, -1f);
+        }
+    }
+}"""
+
+SHOTGUN_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.DataStructures;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleShotgun : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 58;
+            Item.height = 28;
+            Item.scale = 1.15f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 34;
+            Item.useAnimation = 34;
+            Item.autoReuse = false;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 14;
+            Item.knockBack = 5f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.Bullet;
+            Item.shootSpeed = 10f;
+            Item.useAmmo = AmmoID.Bullet;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item38;
+        }
+
+        public override bool Shoot(Player player, EntitySource_ItemUse_WithAmmo source, Vector2 position,
+            Vector2 velocity, int type, int damage, float knockback)
+        {
+            const int numPellets = 3;
+            for (int i = 0; i < numPellets; i++)
+            {
+                Vector2 spreadVelocity = velocity.RotatedByRandom(MathHelper.ToRadians(10));
+                Projectile.NewProjectileDirect(source, position, spreadVelocity, type, damage, knockback, player.whoAmI);
+            }
+            return false;
+        }
+    }
+}"""
+
+RIFLE_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleRifle : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 64;
+            Item.height = 28;
+            Item.scale = 1.15f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 30;
+            Item.useAnimation = 30;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 42;
+            Item.knockBack = 5.5f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.Bullet;
+            Item.shootSpeed = 15f;
+            Item.useAmmo = AmmoID.Bullet;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item40;
+        }
+
+        public override Vector2? HoldoutOffset()
+        {
+            return new Vector2(4f, -2f);
+        }
+    }
+}"""
+
+REPEATER_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleRepeater : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 46;
+            Item.height = 38;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 14;
+            Item.useAnimation = 14;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 26;
+            Item.knockBack = 3f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.WoodenArrowFriendly;
+            Item.shootSpeed = 10.5f;
+            Item.useAmmo = AmmoID.Arrow;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item5;
+        }
+    }
+}"""
+
+WAND_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleWand : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 34;
+            Item.height = 34;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 22;
+            Item.useAnimation = 22;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 28;
+            Item.knockBack = 4f;
+            Item.mana = 8;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.MagicMissile;
+            Item.shootSpeed = 9f;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item43;
+        }
+    }
+}"""
+
+TOME_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleTome : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 32;
+            Item.height = 32;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 28;
+            Item.useAnimation = 28;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 34;
+            Item.knockBack = 4.5f;
+            Item.mana = 12;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.WaterBolt;
+            Item.shootSpeed = 8f;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item21;
+        }
+    }
+}"""
+
+SPELLBOOK_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleSpellbook : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 32;
+            Item.height = 32;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 24;
+            Item.useAnimation = 24;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Magic;
+            Item.damage = 30;
+            Item.knockBack = 4f;
+            Item.mana = 10;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.MagicMissile;
+            Item.shootSpeed = 8.5f;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item43;
+        }
+    }
+}"""
+
+LAUNCHER_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleLauncher : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 66;
+            Item.height = 30;
+            Item.scale = 1.15f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 36;
+            Item.useAnimation = 36;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 48;
+            Item.knockBack = 6f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.RocketI;
+            Item.shootSpeed = 9f;
+            Item.useAmmo = AmmoID.Rocket;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item11;
+        }
+    }
+}"""
+
+CANNON_TEMPLATE = """\
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Weapons
+{
+    public class ExampleCannon : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 70;
+            Item.height = 34;
+            Item.scale = 1.2f;
+            Item.useStyle = ItemUseStyleID.Shoot;
+            Item.useTime = 42;
+            Item.useAnimation = 42;
+            Item.autoReuse = false;
+
+            Item.DamageType = DamageClass.Ranged;
+            Item.damage = 70;
+            Item.knockBack = 9f;
+            Item.noMelee = true;
+
+            // Use the manifest's mechanics.shoot_projectile value here.
+            Item.shoot = ProjectileID.Boulder;
+            Item.shootSpeed = 7f;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Green;
+            Item.UseSound = SoundID.Item14;
+        }
+    }
+}"""
+
 CHANNELED_TEMPLATE = """\
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -1689,6 +2062,15 @@ REFERENCE_SNIPPETS: dict[str, str] = {
     "Gun": GUN_TEMPLATE,
     "Staff": STAFF_TEMPLATE,
     "Bow": BOW_TEMPLATE,
+    "Pistol": PISTOL_TEMPLATE,
+    "Shotgun": SHOTGUN_TEMPLATE,
+    "Rifle": RIFLE_TEMPLATE,
+    "Repeater": REPEATER_TEMPLATE,
+    "Wand": WAND_TEMPLATE,
+    "Tome": TOME_TEMPLATE,
+    "Spellbook": SPELLBOOK_TEMPLATE,
+    "Launcher": LAUNCHER_TEMPLATE,
+    "Cannon": CANNON_TEMPLATE,
     "Summon": SUMMON_TEMPLATE,
     "Whip": WHIP_TEMPLATE,
 }

@@ -6,19 +6,31 @@ from pydantic import ValidationError
 
 from forge_master.templates import (
     BOOMERANG_TEMPLATE,
+    CANNON_TEMPLATE,
     CHAIN_LIGHTNING_TEMPLATE,
     CHANNELED_TEMPLATE,
     CUSTOM_PROJECTILE_TEMPLATE,
+    DAMAGE_CLASS_MAP,
     EXPLOSION_TEMPLATE,
     FROST_SHATTER_TEMPLATE,
     HOMING_TEMPLATE,
+    LAUNCHER_TEMPLATE,
     ORBIT_FURNACE_TEMPLATE,
     ORBIT_TEMPLATE,
     PIERCE_TEMPLATE,
+    PISTOL_TEMPLATE,
+    REFERENCE_SNIPPETS,
+    REPEATER_TEMPLATE,
+    RIFLE_TEMPLATE,
+    SHOTGUN_TEMPLATE,
     SKY_STRIKE_TEMPLATE,
+    SPELLBOOK_TEMPLATE,
     STAFF_TEMPLATE,
     STORM_BRAND_TEMPLATE,
     SWORD_TEMPLATE,
+    TOME_TEMPLATE,
+    USE_STYLE_MAP,
+    WAND_TEMPLATE,
     get_reference_snippet,
     validate_cs,
 )
@@ -117,6 +129,94 @@ class TestGetReferenceSnippet:
         assert get_reference_snippet("Scythe") == SWORD_TEMPLATE
 
 
+@pytest.mark.parametrize(
+    "sub_type,damage_class,use_style,required_tokens,forbidden_tokens",
+    [
+        (
+            "Pistol",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "AmmoID.Bullet"),
+            (),
+        ),
+        (
+            "Shotgun",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "AmmoID.Bullet", "numPellets = 3", "RotatedByRandom"),
+            (),
+        ),
+        (
+            "Rifle",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "AmmoID.Bullet", "Item.useTime = 30"),
+            (),
+        ),
+        (
+            "Repeater",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "AmmoID.Arrow", "Item.useTime = 14"),
+            (),
+        ),
+        (
+            "Wand",
+            "DamageClass.Magic",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "Item.mana ="),
+            ("AmmoID.",),
+        ),
+        (
+            "Tome",
+            "DamageClass.Magic",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "Item.mana ="),
+            ("AmmoID.",),
+        ),
+        (
+            "Spellbook",
+            "DamageClass.Magic",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "Item.mana ="),
+            ("AmmoID.",),
+        ),
+        (
+            "Launcher",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "AmmoID.Rocket"),
+            (),
+        ),
+        (
+            "Cannon",
+            "DamageClass.Ranged",
+            "ItemUseStyleID.Shoot",
+            ("Item.shoot =", "Item.useTime = 42", "Item.knockBack = 9f"),
+            ("AmmoID.", "Item.mana ="),
+        ),
+    ],
+)
+def test_missing_ranged_subtypes_have_projectile_snippet_wiring(
+    sub_type: str,
+    damage_class: str,
+    use_style: str,
+    required_tokens: tuple[str, ...],
+    forbidden_tokens: tuple[str, ...],
+) -> None:
+    assert DAMAGE_CLASS_MAP[sub_type] == damage_class
+    assert USE_STYLE_MAP[sub_type] == use_style
+
+    snippet = get_reference_snippet(sub_type)
+
+    assert REFERENCE_SNIPPETS[sub_type] == snippet
+    assert snippet != SWORD_TEMPLATE
+    for token in required_tokens:
+        assert token in snippet
+    for token in forbidden_tokens:
+        assert token not in snippet
+
+
 _ALL_TEMPLATES = {
     "STORM_BRAND_TEMPLATE": STORM_BRAND_TEMPLATE,
     "ORBIT_FURNACE_TEMPLATE": ORBIT_FURNACE_TEMPLATE,
@@ -129,6 +229,15 @@ _ALL_TEMPLATES = {
     "PIERCE_TEMPLATE": PIERCE_TEMPLATE,
     "CHAIN_LIGHTNING_TEMPLATE": CHAIN_LIGHTNING_TEMPLATE,
     "CHANNELED_TEMPLATE": CHANNELED_TEMPLATE,
+    "PISTOL_TEMPLATE": PISTOL_TEMPLATE,
+    "SHOTGUN_TEMPLATE": SHOTGUN_TEMPLATE,
+    "RIFLE_TEMPLATE": RIFLE_TEMPLATE,
+    "REPEATER_TEMPLATE": REPEATER_TEMPLATE,
+    "WAND_TEMPLATE": WAND_TEMPLATE,
+    "TOME_TEMPLATE": TOME_TEMPLATE,
+    "SPELLBOOK_TEMPLATE": SPELLBOOK_TEMPLATE,
+    "LAUNCHER_TEMPLATE": LAUNCHER_TEMPLATE,
+    "CANNON_TEMPLATE": CANNON_TEMPLATE,
 }
 
 
