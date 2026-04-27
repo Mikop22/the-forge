@@ -11,7 +11,6 @@ import datetime as _dt
 import json
 import os
 import sys
-import traceback
 from pathlib import Path
 
 _AGENTS_DIR = Path(__file__).resolve().parent.parent

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage

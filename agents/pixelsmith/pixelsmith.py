@@ -316,7 +316,6 @@ def _describe_shape_with_colors(ref_url: str, color_palette: str) -> str:
     """LLM describes weapon shape and maps extracted colors to parts."""
     import base64
     import urllib.request
-    from io import BytesIO
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
 

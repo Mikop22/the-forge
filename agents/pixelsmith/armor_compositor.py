@@ -12,7 +12,6 @@ The coordinate map is derived from the Terraria wiki body armor frame layout.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from PIL import Image
 

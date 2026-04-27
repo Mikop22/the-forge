@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 from pathlib import Path
 
 

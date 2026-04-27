@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable
 
 _STYLE_PRIORITY = (
     ("pixel art", 30.0),

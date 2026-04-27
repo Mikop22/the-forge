@@ -1,4 +1,3 @@
-import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,7 +6,6 @@ from unittest import mock
 import orchestrator
 from architect import prompts as architect_prompts
 from architect.models import ItemManifest
-from pydantic import ValidationError
 
 
 class PromptRoutingTests(unittest.TestCase):

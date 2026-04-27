@@ -672,6 +672,9 @@ func TestWizardShell(t *testing.T) {
 	if next.state != screenWizard {
 		t.Fatalf("mode selection state = %v, want %v after choosing the manual wizard path", next.state, screenWizard)
 	}
+	if !next.contentTypeExplicit {
+		t.Fatal("contentTypeExplicit = false, want true after choosing the manual wizard path")
+	}
 	if got := next.View(); !strings.Contains(got, "\n> ") || strings.Contains(got, "offline") {
 		t.Fatalf("wizard shell view = %q, want prompt-only chrome without top status text", got)
 	}
@@ -700,6 +703,9 @@ func TestModeShellEscReturnsToInput(t *testing.T) {
 	}
 	if next.state != screenInput {
 		t.Fatalf("state after second Esc = %v, want %v", next.state, screenInput)
+	}
+	if next.contentTypeExplicit {
+		t.Fatal("contentTypeExplicit = true, want false after returning from mode selection without choosing")
 	}
 }
 
