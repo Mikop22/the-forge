@@ -23,7 +23,11 @@ class UserRequest(BaseModel):
     crafting_station: str | None = None
     content_type: str = "Weapon"
     content_type_explicit: bool | None = None
-    sub_type: str = "Sword"
+    # Default empty so the orchestrator's keyword inference (`_request_sub_type`)
+    # decides the sub_type when the TUI/API caller omits it. Hardcoding "Sword"
+    # here would leak past the validate+merge step in `_RequestHandler._run_safe`
+    # and force every prompt to Sword regardless of content (Bow/Gun/Staff/etc).
+    sub_type: str = ""
     mode: Literal["compile", "instant"] = "compile"
     existing_manifest: dict[str, Any] | None = None
     art_feedback: str | None = None

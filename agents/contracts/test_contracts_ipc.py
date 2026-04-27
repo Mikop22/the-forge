@@ -17,6 +17,16 @@ def test_user_request_minimal_compile() -> None:
     assert m.content_type_explicit is None
 
 
+def test_user_request_omitted_sub_type_defaults_empty_for_inference() -> None:
+    """Regression: hardcoding sub_type='Sword' here used to leak through the
+    orchestrator validate+merge step and override `_request_sub_type` keyword
+    inference, forcing every prompt to Sword. Default must be empty so the
+    orchestrator can infer Bow/Gun/Staff/etc. from the prompt text."""
+    raw = {"prompt": "Water bow", "mode": "instant"}
+    m = UserRequest.model_validate(raw)
+    assert m.sub_type == ""
+
+
 def test_user_request_instant_ignores_unknown_keys() -> None:
     raw = {
         "prompt": "x",
