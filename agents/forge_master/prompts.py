@@ -117,7 +117,11 @@ Generate the C# ModItem class for the following item manifest:
 
 Additional context:
 - DamageType: `{damage_class}`
-- UseStyle: `{use_style}`"""
+- UseStyle: `{use_style}`
+- Tool power lines, when applicable:
+```csharp
+{tool_power_lines}
+```"""
 
 
 def build_codegen_prompt() -> ChatPromptTemplate:

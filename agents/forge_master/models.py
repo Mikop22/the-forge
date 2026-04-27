@@ -88,6 +88,16 @@ class ManifestMechanics(BaseModel):
         return self
 
 
+class ManifestToolStats(BaseModel):
+    use_time: int = 0
+    power: int = 0
+    axe_power: int = 0
+    pick_power: int = 0
+    pickaxe_power: int = 0
+    hammer_power: int = 0
+    rarity: str = ""
+
+
 class ProjectileVisuals(BaseModel):
     """Visual specification for a custom projectile sprite."""
 
@@ -101,10 +111,12 @@ class ForgeManifest(BaseModel):
     item_name: str
     display_name: str
     tooltip: str = ""
+    content_type: str = "Weapon"
     type: str = "Weapon"
     sub_type: str = "Sword"
     stats: ManifestStats
     mechanics: ManifestMechanics
+    tool_stats: Optional[ManifestToolStats] = None
     presentation: Optional[Presentation] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
     resolved_combat: Optional[ResolvedCombat] = None

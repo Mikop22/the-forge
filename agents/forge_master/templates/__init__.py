@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .snippets import (
+    AXE_TEMPLATE,
     BOW_TEMPLATE,
     BOOMERANG_TEMPLATE,
     CANNON_TEMPLATE,
@@ -13,6 +14,8 @@ from .snippets import (
     EXPLOSION_TEMPLATE,
     FROST_SHATTER_TEMPLATE,
     GUN_TEMPLATE,
+    HAMAXE_TEMPLATE,
+    HAMMER_TEMPLATE,
     HOMING_TEMPLATE,
     LAUNCHER_TEMPLATE,
     ORBIT_FURNACE_TEMPLATE,
@@ -20,6 +23,7 @@ from .snippets import (
     PACKAGE_TEMPLATES,
     PIERCE_TEMPLATE,
     PISTOL_TEMPLATE,
+    PICKAXE_TEMPLATE,
     REFERENCE_SNIPPETS,
     REPEATER_TEMPLATE,
     RIFLE_TEMPLATE,
@@ -32,6 +36,7 @@ from .snippets import (
     SUMMON_TEMPLATE,
     SWORD_TEMPLATE,
     TOME_TEMPLATE,
+    TOOL_POWER_LINES,
     USE_STYLE_MAP,
     WHIP_TEMPLATE,
     WAND_TEMPLATE,
@@ -40,6 +45,7 @@ from .snippets import (
 from .validation import BANNED_PATTERNS, REQUIRED_PATTERNS, validate_cs
 
 __all__ = [
+    "AXE_TEMPLATE",
     "BANNED_PATTERNS",
     "BOW_TEMPLATE",
     "BOOMERANG_TEMPLATE",
@@ -51,6 +57,8 @@ __all__ = [
     "EXPLOSION_TEMPLATE",
     "FROST_SHATTER_TEMPLATE",
     "GUN_TEMPLATE",
+    "HAMAXE_TEMPLATE",
+    "HAMMER_TEMPLATE",
     "HOMING_TEMPLATE",
     "LAUNCHER_TEMPLATE",
     "ORBIT_FURNACE_TEMPLATE",
@@ -58,6 +66,7 @@ __all__ = [
     "PACKAGE_TEMPLATES",
     "PIERCE_TEMPLATE",
     "PISTOL_TEMPLATE",
+    "PICKAXE_TEMPLATE",
     "REFERENCE_SNIPPETS",
     "REQUIRED_PATTERNS",
     "REPEATER_TEMPLATE",
@@ -71,6 +80,7 @@ __all__ = [
     "SUMMON_TEMPLATE",
     "SWORD_TEMPLATE",
     "TOME_TEMPLATE",
+    "TOOL_POWER_LINES",
     "USE_STYLE_MAP",
     "WHIP_TEMPLATE",
     "WAND_TEMPLATE",

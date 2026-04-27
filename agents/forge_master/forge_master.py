@@ -19,6 +19,7 @@ try:
     from forge_master.reviewer import WeaponReviewer
     from forge_master.templates import (
         DAMAGE_CLASS_MAP,
+        TOOL_POWER_LINES,
         USE_STYLE_MAP,
         get_reference_snippet,
         validate_cs,
@@ -29,6 +30,7 @@ except ImportError:
     from reviewer import WeaponReviewer
     from templates import (
         DAMAGE_CLASS_MAP,
+        TOOL_POWER_LINES,
         USE_STYLE_MAP,
         get_reference_snippet,
         validate_cs,
@@ -89,6 +91,7 @@ class CoderAgent:
         custom_projectile = parsed.mechanics.custom_projectile
         shot_style = parsed.mechanics.shot_style
         combat_package = _reference_combat_package_key(parsed)
+        tool_power_lines = _render_tool_power_lines(parsed)
         reference_snippet = get_reference_snippet(
             sub_type,
             custom_projectile,
@@ -102,6 +105,7 @@ class CoderAgent:
                 "manifest_json": json.dumps(validated_manifest, indent=2),
                 "damage_class": damage_class,
                 "use_style": use_style,
+                "tool_power_lines": tool_power_lines,
                 "reference_snippet": reference_snippet,
             }
         )
@@ -245,6 +249,13 @@ def _reference_combat_package_key(parsed: ForgeManifest) -> str | None:
     if parsed.resolved_combat is not None:
         return parsed.resolved_combat.package_key
     return parsed.mechanics.combat_package
+
+
+def _render_tool_power_lines(parsed: ForgeManifest) -> str:
+    renderer = TOOL_POWER_LINES.get(parsed.sub_type)
+    if renderer is None or parsed.tool_stats is None:
+        return ""
+    return renderer(parsed.tool_stats.model_dump())
 
 
 def _strip_markdown_fences(text: str) -> str:

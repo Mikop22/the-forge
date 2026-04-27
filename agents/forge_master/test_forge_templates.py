@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from forge_master.templates import (
+    AXE_TEMPLATE,
     BOOMERANG_TEMPLATE,
     CANNON_TEMPLATE,
     CHAIN_LIGHTNING_TEMPLATE,
@@ -13,12 +14,15 @@ from forge_master.templates import (
     DAMAGE_CLASS_MAP,
     EXPLOSION_TEMPLATE,
     FROST_SHATTER_TEMPLATE,
+    HAMAXE_TEMPLATE,
+    HAMMER_TEMPLATE,
     HOMING_TEMPLATE,
     LAUNCHER_TEMPLATE,
     ORBIT_FURNACE_TEMPLATE,
     ORBIT_TEMPLATE,
     PIERCE_TEMPLATE,
     PISTOL_TEMPLATE,
+    PICKAXE_TEMPLATE,
     REFERENCE_SNIPPETS,
     REPEATER_TEMPLATE,
     RIFLE_TEMPLATE,
@@ -29,6 +33,7 @@ from forge_master.templates import (
     STORM_BRAND_TEMPLATE,
     SWORD_TEMPLATE,
     TOME_TEMPLATE,
+    TOOL_POWER_LINES,
     USE_STYLE_MAP,
     WAND_TEMPLATE,
     get_reference_snippet,
@@ -217,6 +222,55 @@ def test_missing_ranged_subtypes_have_projectile_snippet_wiring(
         assert token not in snippet
 
 
+@pytest.mark.parametrize(
+    "sub_type,template,required_tokens,forbidden_tokens",
+    [
+        ("Pickaxe", PICKAXE_TEMPLATE, ("Item.pick = 65;",), ("Item.axe =", "Item.hammer =")),
+        ("Axe", AXE_TEMPLATE, ("Item.axe = 15;",), ("Item.pick =", "Item.hammer =")),
+        ("Hamaxe", HAMAXE_TEMPLATE, ("Item.axe = 15;", "Item.hammer = 55;"), ("Item.pick =",)),
+        ("Hammer", HAMMER_TEMPLATE, ("Item.hammer = 55;",), ("Item.pick =", "Item.axe =")),
+    ],
+)
+def test_tool_subtypes_have_damage_style_and_power_wiring(
+    sub_type: str,
+    template: str,
+    required_tokens: tuple[str, ...],
+    forbidden_tokens: tuple[str, ...],
+) -> None:
+    assert DAMAGE_CLASS_MAP[sub_type] == "DamageClass.Melee"
+    assert USE_STYLE_MAP[sub_type] == "ItemUseStyleID.Swing"
+
+    snippet = get_reference_snippet(sub_type)
+
+    assert REFERENCE_SNIPPETS[sub_type] == template
+    assert snippet == template
+    assert snippet != SWORD_TEMPLATE
+    for token in required_tokens:
+        assert token in snippet
+    for token in forbidden_tokens:
+        assert token not in snippet
+
+
+@pytest.mark.parametrize(
+    "sub_type,tool_stats,expected_lines",
+    [
+        ("Pickaxe", {"pick_power": 70}, ("Item.pick = 70;",)),
+        ("Axe", {"axe_power": 16}, ("Item.axe = 16;",)),
+        ("Hamaxe", {"axe_power": 16, "hammer_power": 60}, ("Item.axe = 16;", "Item.hammer = 60;")),
+        ("Hammer", {"hammer_power": 60}, ("Item.hammer = 60;",)),
+    ],
+)
+def test_tool_power_lines_render_from_tool_stats(
+    sub_type: str,
+    tool_stats: dict[str, int],
+    expected_lines: tuple[str, ...],
+) -> None:
+    lines = TOOL_POWER_LINES[sub_type](tool_stats)
+
+    for expected in expected_lines:
+        assert expected in lines
+
+
 _ALL_TEMPLATES = {
     "STORM_BRAND_TEMPLATE": STORM_BRAND_TEMPLATE,
     "ORBIT_FURNACE_TEMPLATE": ORBIT_FURNACE_TEMPLATE,
@@ -238,6 +292,10 @@ _ALL_TEMPLATES = {
     "SPELLBOOK_TEMPLATE": SPELLBOOK_TEMPLATE,
     "LAUNCHER_TEMPLATE": LAUNCHER_TEMPLATE,
     "CANNON_TEMPLATE": CANNON_TEMPLATE,
+    "PICKAXE_TEMPLATE": PICKAXE_TEMPLATE,
+    "AXE_TEMPLATE": AXE_TEMPLATE,
+    "HAMAXE_TEMPLATE": HAMAXE_TEMPLATE,
+    "HAMMER_TEMPLATE": HAMMER_TEMPLATE,
 }
 
 

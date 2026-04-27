@@ -11,6 +11,7 @@ All templates are sourced from / validated against the official tModLoader
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 # ---------------------------------------------------------------------------
 # Sub-type → API constant mappings
@@ -30,6 +31,10 @@ DAMAGE_CLASS_MAP: dict[str, str] = {
     "Spellbook": "DamageClass.Magic",
     "Launcher": "DamageClass.Ranged",
     "Cannon": "DamageClass.Ranged",
+    "Pickaxe": "DamageClass.Melee",
+    "Axe": "DamageClass.Melee",
+    "Hamaxe": "DamageClass.Melee",
+    "Hammer": "DamageClass.Melee",
     "Summon": "DamageClass.Summon",
     "Whip": "DamageClass.SummonMeleeSpeed",
 }
@@ -48,8 +53,41 @@ USE_STYLE_MAP: dict[str, str] = {
     "Spellbook": "ItemUseStyleID.Shoot",
     "Launcher": "ItemUseStyleID.Shoot",
     "Cannon": "ItemUseStyleID.Shoot",
+    "Pickaxe": "ItemUseStyleID.Swing",
+    "Axe": "ItemUseStyleID.Swing",
+    "Hamaxe": "ItemUseStyleID.Swing",
+    "Hammer": "ItemUseStyleID.Swing",
     "Summon": "ItemUseStyleID.Swing",
     "Whip": "ItemUseStyleID.Swing",
+}
+
+
+def _tool_power(tool_stats: Mapping[str, int], key: str, fallback: int) -> int:
+    value = tool_stats.get(key, fallback)
+    return int(value or fallback)
+
+
+def _pick_power(tool_stats: Mapping[str, int], fallback: int) -> int:
+    value = tool_stats.get("pick_power", tool_stats.get("pickaxe_power", fallback))
+    return int(value or fallback)
+
+
+TOOL_POWER_LINES = {
+    "Pickaxe": lambda tool_stats: (
+        f"Item.pick = {_pick_power(tool_stats, 65)};"
+    ),
+    "Axe": lambda tool_stats: (
+        f"Item.axe = {_tool_power(tool_stats, 'axe_power', 15)};"
+    ),
+    "Hammer": lambda tool_stats: (
+        f"Item.hammer = {_tool_power(tool_stats, 'hammer_power', 55)};"
+    ),
+    "Hamaxe": lambda tool_stats: "\n".join(
+        [
+            f"Item.axe = {_tool_power(tool_stats, 'axe_power', 15)};",
+            f"Item.hammer = {_tool_power(tool_stats, 'hammer_power', 55)};",
+        ]
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -1391,6 +1429,140 @@ namespace ForgeGeneratedMod.Content.Items.Weapons
     }
 }"""
 
+PICKAXE_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Tools
+{
+    public class ExamplePickaxe : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 40;
+            Item.height = 40;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Swing;
+            Item.useTime = 18;
+            Item.useAnimation = 18;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Melee;
+            Item.damage = 12;
+            Item.knockBack = 3f;
+
+            // Use manifest.tool_stats.pick_power for generated tools.
+            Item.pick = 65;
+
+            Item.value = Item.buyPrice(silver: 80);
+            Item.rare = ItemRarityID.Blue;
+            Item.UseSound = SoundID.Item1;
+        }
+    }
+}"""
+
+AXE_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Tools
+{
+    public class ExampleAxe : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 42;
+            Item.height = 42;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Swing;
+            Item.useTime = 22;
+            Item.useAnimation = 22;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Melee;
+            Item.damage = 14;
+            Item.knockBack = 4f;
+
+            // Use manifest.tool_stats.axe_power. tModLoader axe power uses 5x convention.
+            Item.axe = 15;
+
+            Item.value = Item.buyPrice(silver: 80);
+            Item.rare = ItemRarityID.Blue;
+            Item.UseSound = SoundID.Item1;
+        }
+    }
+}"""
+
+HAMAXE_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Tools
+{
+    public class ExampleHamaxe : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 44;
+            Item.height = 44;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Swing;
+            Item.useTime = 24;
+            Item.useAnimation = 24;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Melee;
+            Item.damage = 16;
+            Item.knockBack = 5f;
+
+            // Use manifest.tool_stats.axe_power. tModLoader axe power uses 5x convention.
+            Item.axe = 15;
+            // Use manifest.tool_stats.hammer_power.
+            Item.hammer = 55;
+
+            Item.value = Item.buyPrice(gold: 1);
+            Item.rare = ItemRarityID.Blue;
+            Item.UseSound = SoundID.Item1;
+        }
+    }
+}"""
+
+HAMMER_TEMPLATE = """\
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+
+namespace ForgeGeneratedMod.Content.Items.Tools
+{
+    public class ExampleHammer : ModItem
+    {
+        public override void SetDefaults()
+        {
+            Item.width = 40;
+            Item.height = 40;
+            Item.scale = 1.1f;
+            Item.useStyle = ItemUseStyleID.Swing;
+            Item.useTime = 25;
+            Item.useAnimation = 25;
+            Item.autoReuse = true;
+
+            Item.DamageType = DamageClass.Melee;
+            Item.damage = 14;
+            Item.knockBack = 6f;
+
+            // Use manifest.tool_stats.hammer_power.
+            Item.hammer = 55;
+
+            Item.value = Item.buyPrice(silver: 80);
+            Item.rare = ItemRarityID.Blue;
+            Item.UseSound = SoundID.Item1;
+        }
+    }
+}"""
+
 CHANNELED_TEMPLATE = """\
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -2071,6 +2243,10 @@ REFERENCE_SNIPPETS: dict[str, str] = {
     "Spellbook": SPELLBOOK_TEMPLATE,
     "Launcher": LAUNCHER_TEMPLATE,
     "Cannon": CANNON_TEMPLATE,
+    "Pickaxe": PICKAXE_TEMPLATE,
+    "Axe": AXE_TEMPLATE,
+    "Hamaxe": HAMAXE_TEMPLATE,
+    "Hammer": HAMMER_TEMPLATE,
     "Summon": SUMMON_TEMPLATE,
     "Whip": WHIP_TEMPLATE,
 }
