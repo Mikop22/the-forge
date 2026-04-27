@@ -172,6 +172,7 @@ func (m model) enterForge() (tea.Model, tea.Cmd) {
 
 	tier := m.tier
 	contentType := m.contentType
+	contentTypeExplicit := m.contentTypeExplicit
 	subType := m.subType
 	craftingStation := m.craftingStation
 	pendingManifest := m.pendingManifest
@@ -188,7 +189,7 @@ func (m model) enterForge() (tea.Model, tea.Cmd) {
 		if pendingArtFeedback != "" {
 			extra["art_feedback"] = pendingArtFeedback
 		}
-		if err := ipc.WriteUserRequest(prompt, tier, contentType, subType, craftingStation, extra); err != nil {
+		if err := ipc.WriteUserRequest(prompt, tier, contentType, subType, craftingStation, contentTypeExplicit, extra); err != nil {
 			return forgeErrMsg{message: "Failed to write request: " + err.Error()}
 		}
 		return ipc.PollStatusMsg{}

@@ -33,8 +33,8 @@ func readOrchestratorHeartbeat() bool {
 	return ipc.ReadOrchestratorHeartbeat()
 }
 
-func writeUserRequest(prompt, tier, contentType, subType, craftingStation string, extra map[string]interface{}) error {
-	return ipc.WriteUserRequest(prompt, tier, contentType, subType, craftingStation, extra)
+func writeUserRequest(prompt, tier, contentType, subType, craftingStation string, contentTypeExplicit bool, extra map[string]interface{}) error {
+	return ipc.WriteUserRequest(prompt, tier, contentType, subType, craftingStation, contentTypeExplicit, extra)
 }
 
 func readGenerationStatus() pipelineStatus {

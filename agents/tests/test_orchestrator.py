@@ -154,5 +154,47 @@ class RequestSubTypeInferenceTests(unittest.TestCase):
         self.assertEqual(orchestrator._request_sub_type(req), "")
 
 
+class RequestContentTypeInferenceTests(unittest.TestCase):
+    def test_explicit_weapon_pickaxe_prompt_remains_weapon(self) -> None:
+        req = {
+            "prompt": "obsidian pickaxe with magma cracks",
+            "content_type": "Weapon",
+            "content_type_explicit": True,
+        }
+        self.assertEqual(orchestrator._request_content_type_inferred(req), "Weapon")
+
+    def test_non_explicit_weapon_pickaxe_prompt_routes_to_tool(self) -> None:
+        req = {
+            "prompt": "obsidian pickaxe with magma cracks",
+            "content_type": "Weapon",
+            "content_type_explicit": False,
+        }
+        self.assertEqual(orchestrator._request_content_type_inferred(req), "Tool")
+
+    def test_non_explicit_weapon_sword_prompt_remains_weapon(self) -> None:
+        req = {
+            "prompt": "obsidian sword with magma cracks",
+            "content_type": "Weapon",
+            "content_type_explicit": False,
+        }
+        self.assertEqual(orchestrator._request_content_type_inferred(req), "Weapon")
+
+    def test_non_explicit_accessory_content_type_is_unchanged(self) -> None:
+        req = {
+            "prompt": "obsidian pickaxe charm",
+            "content_type": "Accessory",
+            "content_type_explicit": False,
+        }
+        self.assertEqual(orchestrator._request_content_type_inferred(req), "Accessory")
+
+    def test_explicit_tool_content_type_remains_tool(self) -> None:
+        req = {
+            "prompt": "obsidian pickaxe with magma cracks",
+            "content_type": "Tool",
+            "content_type_explicit": True,
+        }
+        self.assertEqual(orchestrator._request_content_type_inferred(req), "Tool")
+
+
 if __name__ == "__main__":
     unittest.main()

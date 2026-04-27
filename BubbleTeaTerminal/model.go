@@ -158,14 +158,15 @@ type model struct {
 	spinner      spinner.Model
 	sessionShell sessionShellState
 
-	prompt          string
-	tier            string
-	contentType     string
-	subType         string
-	damageClass     string
-	styleChoice     string
-	projectile      string
-	craftingStation string
+	prompt              string
+	tier                string
+	contentType         string
+	contentTypeExplicit bool
+	subType             string
+	damageClass         string
+	styleChoice         string
+	projectile          string
+	craftingStation     string
 
 	wizardIndex   int
 	errMsg        string

@@ -86,7 +86,7 @@ func TestWriteUserRequestIncludesContentMetadataAndRepromptFields(t *testing.T) 
 		"art_feedback":      "more chain detail",
 	}
 
-	if err := WriteUserRequest("Echo Hook", "Hardmode", "Tool", "Hook", "", extra); err != nil {
+	if err := WriteUserRequest("Echo Hook", "Hardmode", "Tool", "Hook", "", true, extra); err != nil {
 		t.Fatalf("WriteUserRequest() error = %v", err)
 	}
 
@@ -103,6 +103,9 @@ func TestWriteUserRequestIncludesContentMetadataAndRepromptFields(t *testing.T) 
 	if got := payload["content_type"]; got != "Tool" {
 		t.Fatalf("content_type = %#v, want Tool", got)
 	}
+	if got := payload["content_type_explicit"]; got != true {
+		t.Fatalf("content_type_explicit = %#v, want true", got)
+	}
 	if got := payload["sub_type"]; got != "Hook" {
 		t.Fatalf("sub_type = %#v, want Hook", got)
 	}
@@ -111,6 +114,34 @@ func TestWriteUserRequestIncludesContentMetadataAndRepromptFields(t *testing.T) 
 	}
 	if _, ok := payload["existing_manifest"].(map[string]interface{}); !ok {
 		t.Fatalf("existing_manifest missing or wrong type: %#v", payload["existing_manifest"])
+	}
+}
+
+func TestUserRequestContentTypeExplicitRoundTrip(t *testing.T) {
+	request := UserRequest{
+		Prompt:              "obsidian pickaxe",
+		Tier:                "Tier1_Starter",
+		Mode:                "instant",
+		ContentType:         "Weapon",
+		ContentTypeExplicit: false,
+		SubType:             "Pickaxe",
+	}
+
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal UserRequest: %v", err)
+	}
+
+	var back UserRequest
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("unmarshal UserRequest: %v", err)
+	}
+
+	if back.ContentTypeExplicit {
+		t.Fatalf("ContentTypeExplicit = true, want false")
+	}
+	if back.ContentType != "Weapon" || back.SubType != "Pickaxe" {
+		t.Fatalf("round-trip request = %#v, want Weapon/Pickaxe", back)
 	}
 }
 

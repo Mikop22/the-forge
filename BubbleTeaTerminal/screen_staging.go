@@ -483,6 +483,7 @@ func (m *model) resetForCraftAnother() {
 	m.prompt = ""
 	m.tier = ""
 	m.contentType = ""
+	m.contentTypeExplicit = false
 	m.subType = ""
 	m.damageClass = ""
 	m.styleChoice = ""

@@ -3,6 +3,7 @@
   "tier": "Tier1_Starter",
   "crafting_station": null,
   "content_type": "Weapon",
+  "content_type_explicit": false,
   "sub_type": "Sword",
   "mode": "instant",
   "existing_manifest": null,

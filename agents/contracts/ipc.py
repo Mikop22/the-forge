@@ -22,6 +22,7 @@ class UserRequest(BaseModel):
     tier: str = "Tier1_Starter"
     crafting_station: str | None = None
     content_type: str = "Weapon"
+    content_type_explicit: bool | None = None
     sub_type: str = "Sword"
     mode: Literal["compile", "instant"] = "compile"
     existing_manifest: dict[str, Any] | None = None

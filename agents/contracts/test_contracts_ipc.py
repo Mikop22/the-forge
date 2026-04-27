@@ -14,6 +14,7 @@ def test_user_request_minimal_compile() -> None:
     assert m.tier == "Tier2"
     assert m.mode == "compile"
     assert m.content_type == "Weapon"
+    assert m.content_type_explicit is None
 
 
 def test_user_request_instant_ignores_unknown_keys() -> None:
@@ -25,6 +26,18 @@ def test_user_request_instant_ignores_unknown_keys() -> None:
     m = UserRequest.model_validate(raw)
     assert m.mode == "instant"
     assert not hasattr(m, "future_field")
+
+
+def test_user_request_accepts_content_type_explicit_flag() -> None:
+    raw = {
+        "prompt": "Obsidian pickaxe",
+        "mode": "instant",
+        "content_type": "Weapon",
+        "content_type_explicit": False,
+    }
+    m = UserRequest.model_validate(raw)
+    assert m.content_type == "Weapon"
+    assert m.content_type_explicit is False
 
 
 def test_generation_status_ready() -> None:

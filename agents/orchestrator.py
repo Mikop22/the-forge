@@ -774,6 +774,9 @@ def _request_content_type(request: dict[str, Any]) -> str:
     return str(request.get("content_type") or "Weapon")
 
 
+_TOOL_SUB_TYPES = {"Pickaxe", "Axe", "Hamaxe", "Hammer"}
+
+
 # Ordered: longer/more-specific keywords before their substrings
 # (e.g. "pickaxe" before "axe", "shotgun" before "gun", "broadsword" before "sword").
 # Substring matching is intentional so compound words like "frostgun" still
@@ -822,6 +825,15 @@ def _request_sub_type(request: dict[str, Any]) -> str:
         return ""
     inferred = _infer_weapon_sub_type(str(request.get("prompt") or ""))
     return inferred or "Sword"
+
+
+def _request_content_type_inferred(request: dict[str, Any]) -> str:
+    content_type = _request_content_type(request)
+    if request.get("content_type_explicit") is True:
+        return content_type
+    if _request_sub_type(request) in _TOOL_SUB_TYPES:
+        return "Tool"
+    return content_type
 
 
 def _request_uses_hidden_audition(request: dict[str, Any]) -> bool:
@@ -1247,7 +1259,7 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
     crafting_station: str | None = request.get("crafting_station")
-    content_type: str = _request_content_type(request)
+    content_type: str = _request_content_type_inferred(request)
     sub_type: str = _request_sub_type(request)
 
     if not prompt:
@@ -1371,7 +1383,7 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
     crafting_station: str | None = request.get("crafting_station")
-    content_type: str = _request_content_type(request)
+    content_type: str = _request_content_type_inferred(request)
     sub_type: str = _request_sub_type(request)
     preview_manifest = _prepare_preview_manifest(request)
 

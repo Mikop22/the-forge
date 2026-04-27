@@ -30,6 +30,16 @@ type GenerationStatus struct {
 
 type PollStatusMsg struct{}
 
+type UserRequest struct {
+	Prompt              string `json:"prompt"`
+	Tier                string `json:"tier,omitempty"`
+	Mode                string `json:"mode,omitempty"`
+	ContentType         string `json:"content_type,omitempty"`
+	ContentTypeExplicit bool   `json:"content_type_explicit"`
+	SubType             string `json:"sub_type,omitempty"`
+	CraftingStation     string `json:"crafting_station,omitempty"`
+}
+
 type PollConnectorStatusMsg struct {
 	Attempt int
 }
@@ -311,15 +321,16 @@ func ReadWorkshopStatus() WorkshopStatus {
 	return status
 }
 
-func WriteUserRequest(prompt, tier, contentType, subType, craftingStation string, extra map[string]interface{}) error {
+func WriteUserRequest(prompt, tier, contentType, subType, craftingStation string, contentTypeExplicit bool, extra map[string]interface{}) error {
 	dir := modsources.Dir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	payload := map[string]interface{}{
-		"prompt": prompt,
-		"tier":   tierToKey(tier),
-		"mode":   "instant",
+		"prompt":                prompt,
+		"tier":                  tierToKey(tier),
+		"mode":                  "instant",
+		"content_type_explicit": contentTypeExplicit,
 	}
 	if contentType != "" {
 		payload["content_type"] = contentType
