@@ -47,7 +47,6 @@ from core.runtime_contracts import (
     HiddenLabRequest,
     build_hidden_lab_request,
     evaluate_behavior_contract,
-    load_hidden_lab_request,
     load_hidden_lab_result,
     runtime_result_has_terminal_evidence,
 )
