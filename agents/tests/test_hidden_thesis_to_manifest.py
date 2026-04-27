@@ -244,6 +244,7 @@ def test_supported_staff_fallback_requires_explicit_homage_or_simple_fallback_ma
 
     assert manifest["mechanics"]["combat_package"] is None
     assert manifest["mechanics"]["shot_style"] == "direct"
+    assert manifest["mechanics"]["shoot_projectile"] == "ProjectileID.MagicMissile"
     assert manifest["resolved_combat"] is None
     assert manifest["fallback_reason"] == (
         "allowed legacy fallback: explicit homage marker on supported Weapon/Staff surface"

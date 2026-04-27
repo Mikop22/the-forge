@@ -23,6 +23,39 @@ from architect.models import (
 from forge_master.models import ManifestMechanics
 
 
+def _base_manifest(**overrides):
+    data = {
+        "item_name": "TestItem",
+        "display_name": "Test Item",
+        "tooltip": "A test item.",
+        "content_type": "Weapon",
+        "type": "Weapon",
+        "sub_type": "Sword",
+        "stats": {
+            "damage": 20,
+            "knockback": 4.0,
+            "crit_chance": 4,
+            "use_time": 20,
+            "auto_reuse": True,
+            "rarity": "ItemRarityID.Green",
+        },
+        "visuals": {},
+        "mechanics": {
+            "shot_style": "direct",
+            "custom_projectile": False,
+            "crafting_material": "ItemID.Wood",
+            "crafting_cost": 5,
+            "crafting_tile": "TileID.WorkBenches",
+        },
+    }
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
+    return data
+
+
 class IdRegistryInvariantTests(unittest.TestCase):
     def test_buff_ids_single_source(self) -> None:
         self.assertEqual(set(BUFF_ID_CHOICES), set(VALID_BUFF_IDS))
@@ -502,6 +535,58 @@ class CombatPackageManifestTests(unittest.TestCase):
         self.assertEqual(manifest.resolved_combat.combo_module, "npc_marks_3")
 
 
+@pytest.mark.parametrize(
+    "sub_type",
+    [
+        "Pistol",
+        "Shotgun",
+        "Rifle",
+        "Bow",
+        "Repeater",
+        "Gun",
+        "Staff",
+        "Wand",
+        "Spellbook",
+        "Tome",
+        "Launcher",
+        "Cannon",
+    ],
+)
+def test_ranged_non_package_manifest_requires_shoot_projectile(sub_type: str) -> None:
+    with pytest.raises(ValidationError, match="shoot_projectile"):
+        ItemManifest.model_validate(_base_manifest(sub_type=sub_type))
+
+
+def test_ranged_non_package_manifest_accepts_shoot_projectile() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Pistol",
+            mechanics={"shoot_projectile": "ProjectileID.Bullet"},
+        )
+    )
+
+    assert manifest.mechanics.shoot_projectile == "ProjectileID.Bullet"
+
+
+def test_combat_package_manifest_allows_null_shoot_projectile_after_lowering() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Staff",
+            presentation={"fx_profile": "celestial_shock"},
+            mechanics={
+                "combat_package": "storm_brand",
+                "delivery_style": "direct",
+                "payoff_rate": "fast",
+                "shoot_projectile": "ProjectileID.BallofFire",
+            },
+        )
+    )
+
+    assert manifest.resolved_combat is not None
+    assert manifest.mechanics.combat_package == "storm_brand"
+    assert manifest.mechanics.shoot_projectile is None
+
+
 class CustomProjectileCoercionTests(unittest.TestCase):
     """custom_projectile must be forced False when shot_style != 'direct'."""
 
@@ -632,6 +717,32 @@ class WeaponPromptContractTests(unittest.TestCase):
             self.assertIn(token, prompt)
 
         for token in weapon_prompt.LEGACY_HOMAGE_PROJECTILE_TOKENS:
+            self.assertIn(token, prompt)
+
+    def test_weapon_prompt_requires_projectile_for_non_package_ranged_subtypes(
+        self,
+    ) -> None:
+        prompt = weapon_prompt.SYSTEM_PROMPT
+
+        for token in (
+            "Pistol",
+            "Shotgun",
+            "Rifle",
+            "Bow",
+            "Repeater",
+            "Gun",
+            "Staff",
+            "Wand",
+            "Spellbook",
+            "Tome",
+            "Launcher",
+            "Cannon",
+            "mechanics.shoot_projectile",
+            "combat_package",
+            "ProjectileID.Bullet",
+            "ProjectileID.WoodenArrowFriendly",
+            "ProjectileID.MagicMissile",
+        ):
             self.assertIn(token, prompt)
 
 

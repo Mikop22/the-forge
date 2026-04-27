@@ -56,6 +56,7 @@ class ArchitectManifestTests(unittest.TestCase):
                         },
                         "visuals": {},
                         "mechanics": {
+                            "shoot_projectile": "ProjectileID.Bullet",
                             "crafting_material": "ItemID.IceBlock",
                             "crafting_cost": 5,
                             "crafting_tile": "TileID.WorkBenches",
@@ -202,6 +203,7 @@ class ArchitectManifestTests(unittest.TestCase):
                         },
                         "visuals": {},
                         "mechanics": {
+                            "shoot_projectile": "ProjectileID.Bullet",
                             "crafting_material": "ItemID.IceBlock",
                             "crafting_cost": 5,
                             "crafting_tile": "TileID.WorkBenches",

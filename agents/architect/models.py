@@ -142,6 +142,22 @@ SHOT_STYLE_CHOICES: tuple[str, ...] = (
     "chain_lightning",
     "channeled",
 )
+RANGED_PROJECTILE_SUBTYPES: frozenset[str] = frozenset(
+    {
+        "Pistol",
+        "Shotgun",
+        "Rifle",
+        "Bow",
+        "Repeater",
+        "Gun",
+        "Staff",
+        "Wand",
+        "Spellbook",
+        "Tome",
+        "Launcher",
+        "Cannon",
+    }
+)
 ShotStyleLiteral = Literal[
     "direct",
     "sky_strike",
@@ -816,6 +832,20 @@ class ItemManifest(BaseModel):
                 legacy_type if legacy_type in VALID_CONTENT_TYPES else "Weapon"
             )
         return _lower_combat_package_fields(values)
+
+    @model_validator(mode="after")
+    def require_projectile_for_ranged_non_package(self):
+        if self.mechanics.combat_package:
+            return self
+        if self.sub_type not in RANGED_PROJECTILE_SUBTYPES:
+            return self
+        shoot_projectile = self.mechanics.shoot_projectile
+        if shoot_projectile is None or str(shoot_projectile).strip() == "":
+            raise ValueError(
+                "mechanics.shoot_projectile is required for non-package "
+                f"ranged sub_type {self.sub_type}"
+            )
+        return self
 
     @model_validator(mode="after")
     def normalize_reference_fields(self):

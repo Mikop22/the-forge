@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -11,6 +12,9 @@ import pytest
 _AGENTS = Path(__file__).resolve().parent
 if str(_AGENTS) not in sys.path:
     sys.path.insert(0, str(_AGENTS))
+
+os.environ.setdefault("FORGE_MOD_SOURCES_DIR", "/tmp/the-forge-pytest-mod-sources")
+Path(os.environ["FORGE_MOD_SOURCES_DIR"]).mkdir(parents=True, exist_ok=True)
 
 
 @pytest.fixture(autouse=True)

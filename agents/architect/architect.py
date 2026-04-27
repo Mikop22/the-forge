@@ -24,6 +24,21 @@ PACKAGE_PROJECTILE_BRIEFS = {
     "frost_shatter": "cold blue crystal shard bolt with a white frost glow",
 }
 
+DEFAULT_RANGED_PROJECTILES = {
+    "Pistol": "ProjectileID.Bullet",
+    "Shotgun": "ProjectileID.Bullet",
+    "Rifle": "ProjectileID.Bullet",
+    "Bow": "ProjectileID.WoodenArrowFriendly",
+    "Repeater": "ProjectileID.WoodenArrowFriendly",
+    "Gun": "ProjectileID.Bullet",
+    "Staff": "ProjectileID.MagicMissile",
+    "Wand": "ProjectileID.MagicMissile",
+    "Spellbook": "ProjectileID.MagicMissile",
+    "Tome": "ProjectileID.WaterBolt",
+    "Launcher": "ProjectileID.RocketI",
+    "Cannon": "ProjectileID.Boulder",
+}
+
 try:  # Prefer package imports to avoid cross-agent module name collisions.
     from architect.models import (
         TIER_TABLE,
@@ -328,7 +343,8 @@ class ArchitectAgent:
                 "mechanics": {
                     "shot_style": legacy_projection.shot_style,
                     "custom_projectile": legacy_projection.custom_projectile,
-                    "shoot_projectile": legacy_projection.shoot_projectile,
+                    "shoot_projectile": legacy_projection.shoot_projectile
+                    or DEFAULT_RANGED_PROJECTILES.get(sub_type),
                 },
             },
             prompt=prompt,

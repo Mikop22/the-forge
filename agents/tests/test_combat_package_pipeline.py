@@ -70,6 +70,7 @@ def _build_legacy_manifest(case: dict) -> dict:
         },
         "visuals": {"description": case["visual_description"]},
         "mechanics": {
+            "shoot_projectile": "ProjectileID.StarWrath",
             "shot_style": case["shot_style"],
             "custom_projectile": case["custom_projectile"],
             "crafting_material": "ItemID.FallenStar",

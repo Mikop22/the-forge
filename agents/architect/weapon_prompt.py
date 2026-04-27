@@ -43,6 +43,20 @@ LEGACY_HOMAGE_PROJECTILE_TOKENS = (
     "legacy projectile path",
     "explicit vanilla homage weapons",
 )
+RANGED_PROJECTILE_SUBTYPES = (
+    "Pistol",
+    "Shotgun",
+    "Rifle",
+    "Bow",
+    "Repeater",
+    "Gun",
+    "Staff",
+    "Wand",
+    "Spellbook",
+    "Tome",
+    "Launcher",
+    "Cannon",
+)
 UNSUPPORTED_FAMILY_FALLBACK_GUIDANCE = (
     "For unsupported weapon families outside that phase-1 `Weapon` + `Staff` "
     "surface, use the legacy projectile fields instead of combat packages."
@@ -60,6 +74,9 @@ _SUPPORTED_COMBAT_PACKAGES_TEXT = ", ".join(
 )
 _PHASE_1_PACKAGE_SUPPORT_SCOPE_TEXT = " and ".join(
     f"`{token}`" for token in PHASE_1_PACKAGE_SUPPORT_SCOPE
+)
+_RANGED_PROJECTILE_SUBTYPES_TEXT = ", ".join(
+    f"`{sub_type}`" for sub_type in RANGED_PROJECTILE_SUBTYPES
 )
 
 SYSTEM_PROMPT = f"""\
@@ -112,6 +129,13 @@ CRITICAL — structured enum fields:
   authoring path.
 - `{LEGACY_FALLBACK_FIELDS[2]}` is an internal compatibility field and legacy
   fallback, not the primary authoring path.
+- Ranged non-package projectile requirement: when Sub Type is one of
+  {_RANGED_PROJECTILE_SUBTYPES_TEXT} and `{PACKAGE_PRIMARY_FIELDS[0]}` is null
+  or empty, you MUST populate `{LEGACY_FALLBACK_FIELDS[2]}` with a valid
+  `ProjectileID.*` constant. Examples: `ProjectileID.Bullet` for bullet-firing
+  guns, pistols, rifles, and shotguns; `ProjectileID.WoodenArrowFriendly` for
+  bows and repeaters; `ProjectileID.MagicMissile` for magic staffs, wands,
+  tomes, and spellbooks. Launchers can use `ProjectileID.RocketI`.
 - If you must use the legacy fields, `mechanics.shot_style` must be one of:
   "direct" (default — straight-line fire toward cursor),
   "sky_strike" (projectiles SPAWN ABOVE THE SCREEN and fall DOWN toward the
