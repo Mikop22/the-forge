@@ -1,9 +1,9 @@
 # The Forge
 
-<img width="972" height="503" alt="Screenshot 2026-04-12 at 11 35 37 PM" src="https://github.com/user-attachments/assets/976c9d18-2e84-4e81-893c-3abf445628df" />
+<img width="688" height="365" alt="Screenshot 2026-04-28 at 9 12 25 PM" src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" />
 
 
-**Claude Code for Terraria** — describe a weapon, watch The Forge turn it into a live Terraria item.
+**Claude Code for Terraria**
 
 Describe an item, and The Forge can design it, generate art, build the mod output, and inject it live into a running terraria world.
 
@@ -13,24 +13,12 @@ Describe an item, and The Forge can design it, generate art, build the mod outpu
 
 ## What It Does
 
-- Prompt-to-item generation through `Architect`, `Pixelsmith`, `Forge Master`, and `Gatekeeper`
-- Instant live injection through `ForgeConnector`
-- Bench/shelf workshop loop in the TUI
+- Prompt-to-item generation
+- Instant live injection through
+- Itterate on the item in the TUI
 - Direct reinject and restore flows for runtime tuning
 - Bounded hidden-audition and runtime-validation path for supported package/runtime slices
 
-## Current Product Shape
-
-The repo has three active flows:
-
-1. **Normal compile path**
-   - generate manifest, art, C# mod output, and staged build artifacts
-2. **Instant inject path**
-   - generate manifest + art and inject directly without a packaged build
-3. **Workshop / Forge Director path**
-   - keep one active item on the bench
-   - generate shelf variants from natural-language direction
-   - bench a variant and reinject it live
 
 ## Architecture Docs
 
@@ -49,7 +37,7 @@ If you are trying to understand or modify the system:
 - Go `1.24+`
 - Python `3.12+`
 - Node `18+`
-- Playwright runtime for Architect reference lookup
+- Playwright runtime for reference image lookup
 
 ## Setup
 
@@ -60,7 +48,7 @@ git clone https://github.com/Mikop22/the-forge.git
 cd the-forge
 ```
 
-### 2. API keys: *pending local mode for those of you with cool gpus*
+### 2. API keys: *pending local mode for those of you with beefy gpus*
 
 Copy the template and fill in your keys:
 
@@ -74,14 +62,12 @@ Required keys:
 ```env
 OPENAI_API_KEY=your-openai-key
 FAL_KEY=your-fal-key
-FAL_IMAGE_TO_IMAGE_ENABLED=true
 ```
 
 | Key | Use |
 |-----|-----|
 | `OPENAI_API_KEY` | Architect, Forge Master, orchestration |
 | `FAL_KEY` | Pixelsmith image generation |
-| `FAL_IMAGE_TO_IMAGE_ENABLED` | optional reference-aware art path |
 
 ### 3. Pixelsmith weights (must have for terraria compatible sprites)
 
@@ -121,7 +107,7 @@ go mod download
 
 ### 7. Install `ForgeConnector`
 
-`ForgeConnector` is the tModLoader bridge mod that enables live injection and runtime status.
+`ForgeConnector` is the tModLoader mod that enables live injection and runtime status.
 
 1. Copy `mod/ForgeConnector/` into your tModLoader `ModSources` directory:
    - macOS: `~/Library/Application Support/Terraria/tModLoader/ModSources/`
@@ -137,81 +123,8 @@ From `BubbleTeaTerminal/`:
 ```bash
 go run .
 ```
-
-The TUI auto-starts the Python orchestrator. If `FAL_KEY`, `OPENAI_API_KEY`, the Pixelsmith weights, or Playwright Chromium are missing, the orchestrator's pre-flight check writes a clear setup error into the forge screen — no silent hang.
-
-## ModSources Resolution
-
-All components resolve tModLoader `ModSources` in this order:
-
-1. `FORGE_MOD_SOURCES_DIR`
-2. `~/.config/theforge/config.toml` `mod_sources_dir`
-3. OS default path
-
-Only one orchestrator may run per `ModSources` tree. The lock file is:
-
-```text
-ModSources/.forge_orchestrator.lock
 ```
 
-## Demo Prompt
-
-For a first run, this prompt is known to land cleanly through every gate:
-
-```
-Storm Brand — a long sword wreathed in crackling cobalt lightning, with arcing electric runes along the blade
-```
-
-Type it on the input screen, choose `Auto`, and watch the pipeline work end-to-end.
-
-If you want a structured pre-record / dry-run flow with backup prompts and recovery steps, see [docs/superpowers/specs/2026-04-26-demo-dry-run-checklist.md](docs/superpowers/specs/2026-04-26-demo-dry-run-checklist.md).
-
-## Using The TUI
-
-### Basic forge flow
-
-1. Enter an item prompt
-2. Choose `Auto` or use the manual wizard
-3. Let the forge/build pipeline run
-4. Review the result on the staging/workshop screen
-5. Inject the item into a live tModLoader session
-
-### Workshop flow
-
-On the staging screen, press `/` or `Tab` to open the director command bar. The bar shows an autocomplete drawer with every available command. Pressing Enter on a no-arg command runs it; pressing Enter on a command that takes an argument completes the slash + space so you can type the rest.
-
-| Command | Argument | Effect |
-|---|---|---|
-| `/forge` | `<prompt>` | Generate a new item from scratch |
-| `/variants` | `<describe changes>` | Generate shelf variants from the bench |
-| `/bench` | `<id or number>` | Set a shelf variant as the active bench |
-| `/try` | — | Reinject the current bench item into Terraria |
-| `/restore` | `baseline \| live` | Restore bench to a previous state |
-| `/status` | — | Show bench label and runtime state |
-| `/memory` | — | Show pinned memory notes |
-| `/clear` | — | Clear the active bench and shelf |
-| `/history` | — | List items accepted this session |
-| `/help` | — | List all available commands |
-
-If you type plain natural language into the command bar instead of a slash command, it is treated as a variant-generation direction.
-
-## Runtime Files
-
-The most important live files under `ModSources` are:
-
-- `generation_status.json`
-- `workshop_request.json`
-- `workshop_status.json`
-- `forge_inject.json`
-- `forge_connector_status.json`
-- `forge_runtime_summary.json`
-- `forge_connector_alive.json`
-
-When debugging direct inject, these are also useful:
-
-- `forge_last_inject.json`
-- `forge_last_inject_debug.json`
-- `ForgeConnectorInjectedAssets/`
 
 ## Supported Item Types
 
