@@ -135,15 +135,6 @@ func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVar
 	}
 }
 
-func isLocalShellInfoAction(action commandAction) bool {
-	switch action {
-	case commandActionStatus, commandActionMemory, commandActionWhatChanged, commandActionHelp, commandActionClear, commandActionHistory:
-		return true
-	default:
-		return false
-	}
-}
-
 func (m model) shellInfoResponse(route commandRoute) string {
 	switch route.Action {
 	case commandActionStatus:

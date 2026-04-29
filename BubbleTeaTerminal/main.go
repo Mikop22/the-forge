@@ -193,65 +193,7 @@ func buildMetaLine(item craftedItem) string {
 	}
 	return strings.Join(parts, " · ")
 }
-func (m model) renderShell(content string) string {
-	ember := styles.Ember.Render(m.emberStrip())
-	frame := styles.FrameCalm
-	switch m.state {
-	case screenWizard, screenMode:
-		frame = styles.FrameCharged
-	case screenForge, screenStaging:
-		frame = styles.FrameCracked
-	}
 
-	panelBody := frame.Render(content)
-	if m.termCompact {
-		return strings.Join([]string{ember, panelBody}, "\n")
-	}
-
-	sigil := styles.SigilColumn.Render(m.sigilColumn())
-	return strings.Join([]string{ember, lipgloss.JoinHorizontal(lipgloss.Top, panelBody, "  ", sigil)}, "\n")
-}
-
-func (m model) emberStrip() string {
-	patterns := []string{
-		"·  *   ·   +   ·  *",
-		"*   ·   +   ·  *   ·",
-		"+   ·  *   ·   +   ·",
-	}
-	return patterns[m.animTick%len(patterns)]
-}
-
-func (m model) sigilColumn() string {
-	slots := []string{"Type", "Sub", "Tier", "Prompt", "Forge"}
-	values := []string{
-		m.contentType,
-		m.subType,
-		m.tier,
-		truncateLabel(strings.TrimSpace(m.prompt), 10),
-		m.craftingStation,
-	}
-	lines := []string{styles.Meta.Render("Sigils")}
-	for i := range slots {
-		mark := "○"
-		label := slots[i]
-		if values[i] != "" {
-			mark = "◉"
-			label = values[i]
-		}
-		lines = append(lines, styles.Body.Render(fmt.Sprintf("%s %s", mark, label)))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func truncateLabel(value string, maxLen int) string {
-	if maxLen <= 0 || len(value) <= maxLen {
-		return value
-	}
-	if maxLen <= 3 {
-		return value[:maxLen]
-	}
-	return value[:maxLen-3] + "..."
-}
 func main() {
 	ipc.EnsureOrchestrator()
 	ipc.WarnPathMismatches()
