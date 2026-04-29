@@ -1,6 +1,6 @@
 
 # The Forge
-## Describe an item, and The Forge can conceptualize it, generate art, make novel animations, and write the code.
+## Describe an item, The Forge can conceptualize it, generate art, make novel animations, and write the code.
 
 
 <p align="center">
