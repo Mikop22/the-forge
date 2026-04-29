@@ -14,7 +14,7 @@
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 
-## Architecture
+## Architecture (High Level)
 
 ### The whole thing — prompt to playable
 
@@ -102,9 +102,9 @@ flowchart TD
     style LEARN fill:#854d0e,color:#fff
 ```
 
-We don't trust the model's first idea, and we don't trust the art alone — a candidate also has to survive a live playtest before it can win. If everything fails, the system learns why and retries with a different angle.
+We don't trust the model's first idea, and we don't trust the art alone, a candidate also has to survive a live playtest before it can win. If everything fails, the system learns why and retries with a different angle.
 
-### Endgame items — when the system gets ambitious
+### Endgame items; when the system gets ambitious
 
 ```mermaid
 flowchart TD
@@ -133,7 +133,7 @@ flowchart TD
     style REWRITE fill:#7f1d1d,color:#fff
 ```
 
-At the high end, the designer stops describing "a weapon" and starts producing a **creative contract** — a list of must-haves and must-not-haves. The reviewer enforces that contract literally on the code side, which is what stops endgame items from collapsing into generic fireballs.
+At the high end, the designer stops describing "a weapon" and starts producing a **creative contract** — a list of must-haves and must-not-haves. The reviewer enforces that contract literally on the code side, which is what stops endgame items from collapsing into generic weapon thats use stock projectiles.
 
 ### Where the data goes
 
@@ -161,7 +161,7 @@ flowchart LR
     style OUT fill:#065f46,color:#fff
 ```
 
-The spec isn't a static document — it gets richer as it travels. The artist hands back real hitbox measurements before the engineer writes a line of code, which is why the resulting weapon feels physically correct in-game.
+The spec isn't a static document, it gets richer as it travels. The artist hands back real hitbox measurements before the engineer writes a line of code, which is why the resulting weapon feels physically correct in-game.
 
 ## Prerequisites
 
