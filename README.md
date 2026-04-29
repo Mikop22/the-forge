@@ -1,14 +1,13 @@
 # The Forge
 
-<img width="688" height="365" alt="Screenshot 2026-04-28 at 9 12 25 PM" src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" />
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
+</p>
 
 
 
 
-
-![Go](https://img.shields.io/badge/TUI-Go%20%2F%20BubbleTea-00ADD8)
-![Python](https://img.shields.io/badge/Pipeline-Python-3776AB)
-![tModLoader](https://img.shields.io/badge/Target-tModLoader%201.4.4-green)
 
 ## What It Does: Describe an item, and The Forge can design it, generate art, and write the code.
 
