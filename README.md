@@ -171,12 +171,6 @@ the-forge/
     └── plans/
 ```
 
-## Boundaries
-
-- The TUI is a workshop client, not a general coding environment
-- Runtime validation is intentionally bounded; do not assume every package/runtime combination is live-valid
-- `ForgeConnector` is a constrained live-runtime bridge, not an arbitrary generated-runtime host
-
 ## Reference-Aware Generation
 
 When a prompt references a known object, weapon, or character, the pipeline can fetch references and use them to guide sprite generation.
