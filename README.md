@@ -39,8 +39,6 @@ flowchart LR
     style G fill:#065f46,color:#fff,stroke:#022c22,stroke-width:2px
 ```
 
-One sentence in, a playable weapon out. The rest of this section is how that line stays true.
-
 ### The pipeline at a glance
 
 ```mermaid
