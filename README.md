@@ -45,7 +45,7 @@ flowchart LR
 flowchart LR
     USER([Player types a prompt])
 
-    USER --> ROUTER{{How fast do they need it?}}
+    USER --> ROUTER{{How complex is this item?}}
 
     subgraph Full["Full build"]
         direction LR
@@ -61,7 +61,7 @@ flowchart LR
         I2 --> I3([Live item dropped<br/>into the running game])
     end
 
-    ROUTER -->|Ship a real mod| F1
+    ROUTER -->|Ship a real mod, with custom animations & mechanics| F1
     ROUTER -->|Try it now| I1
     ROUTER -->|Best-of-N audition| AUD[Hidden audition<br/>see below]
 
