@@ -2,6 +2,7 @@
 # The Forge
 ## Describe an item, The Forge can conceptualize it, generate art, make novel animations, write the code and inject the item, *without reloading the game*.
 
+*all in the terminal*
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
