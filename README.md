@@ -76,7 +76,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    PROMPT([One player prompt]) --> THESES[Generate several<br/>creative directions]
+    PROMPT([Prompt]) --> THESES[Generate several<br/>creative directions]
 
     THESES --> NARROW[Narrow to the<br/>strongest finalists]
 
