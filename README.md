@@ -13,12 +13,9 @@
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 
-## Architecture Docs
+## Architecture
 
-If you are trying to understand or modify the system:
 
-- [docs/architecture/01-architecture.md](docs/architecture/01-architecture.md)
-- [docs/architecture/02-current-state.md](docs/architecture/02-current-state.md)
   
 ## Prerequisites
 
