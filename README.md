@@ -9,7 +9,7 @@
 
 
 
-## What It Does: Describe an item, and The Forge can design it, generate art, and write the code.
+## Describe an item, and The Forge can design it, generate art, and write the code.
 
 
 - Prompt-to-item generation
