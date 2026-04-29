@@ -8,7 +8,7 @@
   <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
 </p>
 
-*see "a staff that shoots nyan-cat" below*
+*"a staff that shoots nyan-cat"*
 
 
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
