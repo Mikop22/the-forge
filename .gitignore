@@ -71,3 +71,7 @@ Thumbs.db
 # Local probe / sweep scripts (developer-only)
 agents/param_sweep.py
 agents/probe_enrichment.py
+
+# Docs (out-of-date, not maintained — do not track)
+docs/
+agents/docs/

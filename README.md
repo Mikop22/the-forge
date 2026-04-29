@@ -16,8 +16,153 @@ https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 ## Architecture
 
+### The whole thing — prompt to playable
 
-  
+```mermaid
+flowchart LR
+    P([“a frostbrand katana<br/>with rime-etched edge”])
+
+    P --> ENGINE{{The Forge}}
+
+    ENGINE --> D[A design]
+    D --> A[A sprite]
+    A --> C[Working code]
+    C --> M[A compiled mod]
+    M --> G([Swinging it<br/>in Terraria])
+
+    style P fill:#1f2937,color:#fff,stroke:#111,stroke-width:2px
+    style ENGINE fill:#1e3a8a,color:#fff,stroke:#0c1e4f,stroke-width:3px
+    style D fill:#0f172a,color:#fff,stroke:#020617
+    style A fill:#0f172a,color:#fff,stroke:#020617
+    style C fill:#0f172a,color:#fff,stroke:#020617
+    style M fill:#0f172a,color:#fff,stroke:#020617
+    style G fill:#065f46,color:#fff,stroke:#022c22,stroke-width:2px
+```
+
+One sentence in, a playable weapon out. The rest of this section is how that line stays true.
+
+### The pipeline at a glance
+
+```mermaid
+flowchart LR
+    USER([Player types a prompt])
+
+    USER --> ROUTER{{How fast do they need it?}}
+
+    subgraph Full["Full build"]
+        direction LR
+        F1[Designer<br/>writes the spec] --> F2[Artist<br/>paints the sprite]
+        F2 --> F3[Engineer<br/>writes the code]
+        F3 --> F4[Inspector<br/>compiles the mod]
+        F4 --> F5([Playable mod<br/>installed in Terraria])
+    end
+
+    subgraph Instant["Instant inject"]
+        direction LR
+        I1[Designer] --> I2[Artist]
+        I2 --> I3([Live item dropped<br/>into the running game])
+    end
+
+    ROUTER -->|Ship a real mod| F1
+    ROUTER -->|Try it now| I1
+    ROUTER -->|Best-of-N audition| AUD[Hidden audition<br/>see below]
+
+    style USER fill:#1f2937,color:#fff,stroke:#111
+    style F5 fill:#065f46,color:#fff,stroke:#022c22
+    style I3 fill:#065f46,color:#fff,stroke:#022c22
+    style AUD fill:#7c2d12,color:#fff,stroke:#431407
+```
+
+One English sentence becomes either a compiled game mod or a live in-game item, depending on how patient the player is.
+
+### The hidden audition — how we pick winners
+
+```mermaid
+flowchart TD
+    PROMPT([One player prompt]) --> THESES[Generate several<br/>creative directions]
+
+    THESES --> NARROW[Narrow to the<br/>strongest finalists]
+
+    NARROW --> ART[Paint every finalist<br/>and score the art]
+
+    ART --> SURVIVE{Did the art<br/>pass review?}
+    SURVIVE -->|No| REJECT[(Archive the reason<br/>it lost)]
+    SURVIVE -->|Yes| PLAYTEST[Drop each survivor into<br/>a live game and watch it play]
+
+    PLAYTEST --> EVIDENCE{Did it actually<br/>feel good in-game?}
+    EVIDENCE -->|No| REJECT
+    EVIDENCE -->|Yes| WINNER([Pick the best<br/>by art score])
+
+    REJECT -.->|All candidates failed| LEARN[Learn from the failure<br/>and try new directions]
+    LEARN --> THESES
+
+    style PROMPT fill:#1f2937,color:#fff
+    style WINNER fill:#065f46,color:#fff
+    style REJECT fill:#7f1d1d,color:#fff
+    style LEARN fill:#854d0e,color:#fff
+```
+
+We don't trust the model's first idea, and we don't trust the art alone — a candidate also has to survive a live playtest before it can win. If everything fails, the system learns why and retries with a different angle.
+
+### Endgame items — when the system gets ambitious
+
+```mermaid
+flowchart TD
+    PROMPT([Endgame-tier prompt]) --> DESIGNER[Designer realizes<br/>this needs spectacle]
+
+    DESIGNER --> SPLIT{{Designer produces two things}}
+
+    SPLIT --> FANTASY[Visual fantasy<br/>for the artist]
+    SPLIT --> CONTRACT[Creative contract<br/>for the engineer:<br/><br/>• What it should feel like<br/>• Mechanics it can compose from<br/>• Things it must NOT feel like<br/>• Things it must NOT include]
+
+    FANTASY --> ART[Artist paints<br/>the fantasy]
+    CONTRACT --> CODE[Engineer implements<br/>the mechanics]
+
+    CODE --> JUDGE{Does the code<br/>honor the contract?}
+    JUDGE -->|Forbidden mechanic snuck in| REWRITE[Send it back]
+    JUDGE -->|Feels too generic| REWRITE
+    JUDGE -->|Honors every clause| SHIP([Endgame weapon ships])
+    REWRITE --> CODE
+
+    ART --> SHIP
+
+    style PROMPT fill:#1f2937,color:#fff
+    style CONTRACT fill:#1e3a8a,color:#fff
+    style FANTASY fill:#1e3a8a,color:#fff
+    style SHIP fill:#065f46,color:#fff
+    style REWRITE fill:#7f1d1d,color:#fff
+```
+
+At the high end, the designer stops describing "a weapon" and starts producing a **creative contract** — a list of must-haves and must-not-haves. The reviewer enforces that contract literally on the code side, which is what stops endgame items from collapsing into generic fireballs.
+
+### Where the data goes
+
+```mermaid
+flowchart LR
+    SPEC[Spec from Designer<br/>name, stats, fantasy] --> A1
+
+    subgraph ART[Art generation]
+        A1[Enrich the description<br/>with visual detail] --> A2[Generate sprite<br/>with custom-tuned model]
+        A2 --> A3[Measure the sprite<br/>find the actual hitbox]
+    end
+
+    A3 --> SPEC2[Spec, now enriched<br/>with real hitboxes]
+
+    SPEC2 --> CODE[Engineer writes code<br/>against the enriched spec]
+    A2 --> ASSETS[(Sprite files)]
+
+    CODE --> BUILD[Inspector stages everything<br/>and compiles]
+    ASSETS --> BUILD
+
+    BUILD --> OUT([Installed mod,<br/>ready to play])
+
+    style SPEC fill:#1f2937,color:#fff
+    style SPEC2 fill:#1e3a8a,color:#fff
+    style OUT fill:#065f46,color:#fff
+```
+
+The spec isn't a static document — it gets richer as it travels. The artist hands back real hitbox measurements before the engineer writes a line of code, which is why the resulting weapon feels physically correct in-game.
+
 ## Prerequisites
 
 - Terraria with tModLoader installed
@@ -156,11 +301,8 @@ the-forge/
 │   ├── pixelsmith/
 │   ├── forge_master/
 │   └── gatekeeper/
-├── mod/
-│   └── ForgeConnector/
-└── docs/
-    ├── architecture/
-    └── plans/
+└── mod/
+    └── ForgeConnector/
 ```
 
 ## Reference-Aware Generation
