@@ -39,7 +39,7 @@ flowchart LR
     style G fill:#065f46,color:#fff,stroke:#022c22,stroke-width:2px
 ```
 
-### The pipeline at a glance
+### The Agents
 
 ```mermaid
 flowchart LR
