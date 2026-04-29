@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 ## Architecture (High Level)
 
-### The whole thing — prompt to playable
+### The whole thing — prompt to playable *without reloading the game*
 
 ```mermaid
 flowchart LR
