@@ -13,7 +13,7 @@
 - Itterate on the item in the TUI
 - Direct reinject and restore flows for runtime tuning
 - Bounded hidden-audition and runtime-validation path for supported package/runtime slices
-- *see "a staff that shoots nyan-cat" below*
+*see "a staff that shoots nyan-cat" below*
 
 
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
