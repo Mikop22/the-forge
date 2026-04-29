@@ -105,7 +105,7 @@ We don't trust the model's first idea, and we don't trust the art alone, a candi
 
 ```mermaid
 flowchart TD
-    PROMPT([Endgame-tier prompt]) --> DESIGNER[Designer realizes<br/>this needs spectacle]
+    PROMPT([Endgame-tier prompt]) --> DESIGNER[Designer realizes<br/>this needs custom animations & mechanics]
 
     DESIGNER --> SPLIT{{Designer produces two things}}
 
