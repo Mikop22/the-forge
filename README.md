@@ -71,7 +71,6 @@ flowchart LR
     style AUD fill:#7c2d12,color:#fff,stroke:#431407
 ```
 
-One English sentence becomes either a compiled game mod or a live in-game item, depending on how patient the player is.
 
 ### The hidden audition — how we pick winners
 
