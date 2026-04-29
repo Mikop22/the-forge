@@ -1,5 +1,6 @@
 
 # The Forge
+## Describe an item, and The Forge can conceptualize it, generate art, make novel animations, and write the code.
 
 
 <p align="center">
@@ -7,7 +8,6 @@
 </p>
 
 
-## Describe an item, and The Forge can conceptualize it, generate art, make novel animations, and write the code.
 - Prompt-to-item generation
 - Instant live injection through
 - Itterate on the item in the TUI
