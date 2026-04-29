@@ -7,21 +7,16 @@
 </p>
 
 
-
-
-
-https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
-
-
-
-## Describe an item, and The Forge can design it, generate art, and write the code.
-
-
+## Describe an item, and The Forge can conceptualize it, generate art, make novel animations, and write the code.
 - Prompt-to-item generation
 - Instant live injection through
 - Itterate on the item in the TUI
 - Direct reinject and restore flows for runtime tuning
 - Bounded hidden-audition and runtime-validation path for supported package/runtime slices
+- *see "a staff that shoots nyan-cat" below*
+
+
+https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 
 ## Architecture Docs
