@@ -5,13 +5,13 @@
 
 
 
-Describe an item, and The Forge can design it, generate art, build the mod output, and inject it live into a running terraria world.
 
 ![Go](https://img.shields.io/badge/TUI-Go%20%2F%20BubbleTea-00ADD8)
 ![Python](https://img.shields.io/badge/Pipeline-Python-3776AB)
 ![tModLoader](https://img.shields.io/badge/Target-tModLoader%201.4.4-green)
 
-## What It Does
+## What It Does: Describe an item, and The Forge can design it, generate art, and write the code.
+
 
 - Prompt-to-item generation
 - Instant live injection through
