@@ -3,7 +3,7 @@
 <img width="688" height="365" alt="Screenshot 2026-04-28 at 9 12 25 PM" src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" />
 
 
-**Claude Code for Terraria**
+
 
 Describe an item, and The Forge can design it, generate art, build the mod output, and inject it live into a running terraria world.
 
@@ -21,10 +21,6 @@ Describe an item, and The Forge can design it, generate art, build the mod outpu
 
 
 ## Architecture Docs
-
-The canonical architecture entrypoint is:
-
-- [docs/architecture/00-index.md](docs/architecture/00-index.md)
 
 If you are trying to understand or modify the system:
 
