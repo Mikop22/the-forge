@@ -61,7 +61,7 @@ flowchart LR
         I2 --> I3([Live item dropped<br/>into the running game])
     end
 
-    ROUTER -->|Ship a real mod, with custom animations & mechanics| F1
+    ROUTER -->|Best of 1| F1
     ROUTER -->|Try it now| I1
     ROUTER -->|Best-of-N audition| AUD[Hidden audition<br/>see below]
 
