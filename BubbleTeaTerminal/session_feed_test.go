@@ -101,8 +101,8 @@ func TestShellViewShowsFeed(t *testing.T) {
 	}
 
 	got := m.View()
-	if !strings.Contains(got, "↳ Welcome back") || !strings.Contains(got, "Bench ") || !strings.Contains(got, "AppleGun") {
-		t.Fatalf("session shell view = %q, want a welcome message when an active bench exists", got)
+	if strings.Contains(got, "↳ Welcome back") || strings.Contains(got, "Bench AppleGun ready") {
+		t.Fatalf("session shell view = %q, want duplicate active-bench welcome removed", got)
 	}
 }
 

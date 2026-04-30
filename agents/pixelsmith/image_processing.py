@@ -17,39 +17,76 @@ from PIL import Image
 # 1. Background removal
 # ---------------------------------------------------------------------------
 
+def _edge_background_references(
+    arr: np.ndarray,
+    *,
+    tolerance: int,
+) -> list[tuple[int, int, int]]:
+    """Pick significant flat background colors from the image border."""
+    h, w = arr.shape[:2]
+    rgb = arr[:, :, :3].astype(np.int16)
+    edge_pixels = []
+
+    for x in range(w):
+        edge_pixels.append(tuple(int(value) for value in rgb[0, x]))
+        edge_pixels.append(tuple(int(value) for value in rgb[h - 1, x]))
+    for y in range(1, h - 1):
+        edge_pixels.append(tuple(int(value) for value in rgb[y, 0]))
+        edge_pixels.append(tuple(int(value) for value in rgb[y, w - 1]))
+
+    bucket_size = max(tolerance + 1, 1)
+    buckets: dict[tuple[int, int, int], list[tuple[int, int, int]]] = {}
+    for pixel in edge_pixels:
+        bucket = tuple(channel // bucket_size for channel in pixel)
+        buckets.setdefault(bucket, []).append(pixel)
+
+    min_bucket_count = max(4, int(round(len(edge_pixels) * 0.1)))
+    significant_buckets = [
+        pixels for pixels in buckets.values() if len(pixels) >= min_bucket_count
+    ]
+    if not significant_buckets:
+        significant_buckets = [max(buckets.values(), key=len)]
+
+    return [
+        tuple(
+            int(round(sum(pixel[channel] for pixel in pixels) / len(pixels)))
+            for channel in range(3)
+        )
+        for pixels in significant_buckets
+    ]
+
+
 def remove_background(
     image: Image.Image,
     *,
     tolerance: int = 20,
 ) -> Image.Image:
-    """Remove the white background via flood-fill from edges.
+    """Remove the flat background via flood-fill from edges.
 
-    Starts from every edge pixel that is near-white and flood-fills inward,
-    marking connected near-white pixels as transparent.  This preserves any
-    white/light details *inside* the weapon (highlights, reflections) because
-    they aren't connected to the edge.
+    Starts from every edge pixel that matches a significant border color and
+    flood-fills inward, marking connected background pixels as transparent.
+    This preserves matching details inside the weapon because they aren't
+    connected to the edge.
 
     Parameters
     ----------
     image : Image.Image
         Source image (any mode — will be converted to RGBA).
     tolerance : int
-        Max distance from pure white (255,255,255) for a pixel to count as
-        "background".  Default 20 means RGB values >= 235 are background.
+        Max per-channel distance from a significant border color for a pixel to
+        count as "background".
     """
     img = image.convert("RGBA")
     arr = np.array(img)
     h, w = arr.shape[:2]
 
-    # Build a mask of near-white pixels
+    # Build a mask of pixels that match significant flat border colors.
     rgb = arr[:, :, :3].astype(np.int16)
-    white_mask = (
-        (rgb[:, :, 0] >= 255 - tolerance)
-        & (rgb[:, :, 1] >= 255 - tolerance)
-        & (rgb[:, :, 2] >= 255 - tolerance)
-    )
+    references = np.array(_edge_background_references(arr, tolerance=tolerance))
+    deltas = np.max(np.abs(rgb[:, :, np.newaxis, :] - references), axis=3)
+    background_mask = np.any(deltas <= tolerance, axis=2)
 
-    # Flood-fill from all edge pixels that are near-white
+    # Flood-fill from all edge pixels that match a background reference.
     from collections import deque
 
     visited = np.zeros((h, w), dtype=bool)
@@ -58,12 +95,12 @@ def remove_background(
     # Seed from all four edges
     for x in range(w):
         for y in (0, h - 1):
-            if white_mask[y, x] and not visited[y, x]:
+            if background_mask[y, x] and not visited[y, x]:
                 visited[y, x] = True
                 queue.append((y, x))
     for y in range(h):
         for x in (0, w - 1):
-            if white_mask[y, x] and not visited[y, x]:
+            if background_mask[y, x] and not visited[y, x]:
                 visited[y, x] = True
                 queue.append((y, x))
 
@@ -72,7 +109,12 @@ def remove_background(
         cy, cx = queue.popleft()
         for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             ny, nx = cy + dy, cx + dx
-            if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and white_mask[ny, nx]:
+            if (
+                0 <= ny < h
+                and 0 <= nx < w
+                and not visited[ny, nx]
+                and background_mask[ny, nx]
+            ):
                 visited[ny, nx] = True
                 queue.append((ny, nx))
 

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from pydantic import ValidationError
 
+from forge_master.forge_master import CoderAgent
 from forge_master.templates import (
     AXE_TEMPLATE,
     BOOMERANG_TEMPLATE,
@@ -42,6 +46,22 @@ from forge_master.templates import (
 from forge_master.models import ForgeManifest
 
 import pytest
+
+
+class TestGenerateHjson:
+    def test_quotes_multiline_and_markup(self) -> None:
+        h = CoderAgent._generate_hjson(
+            "VoidlinePistol",
+            'Pistol "named"',
+            "A long tooltip.\nSecond line [c/ff0000:colored] {braces ok}",
+        )
+        m = re.search(r"Tooltip:\s*(\S.*)$", h, re.MULTILINE)
+        assert m, h
+        tip_literal = m.group(1).strip()
+        assert tip_literal.startswith('"') and tip_literal.endswith('"')
+        assert json.loads(tip_literal) == (
+            "A long tooltip.\nSecond line [c/ff0000:colored] {braces ok}"
+        )
 
 
 class TestGetReferenceSnippet:
@@ -303,6 +323,51 @@ _ALL_TEMPLATES = {
 def test_template_passes_validation(name: str, template: str) -> None:
     violations = validate_cs(template)
     assert violations == [], f"{name} has violations: {violations}"
+
+
+def test_validate_cs_rejects_invalid_shoot_source_signature() -> None:
+    code = """
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+using Terraria.DataStructures;
+using Microsoft.Xna.Framework;
+
+public class BadStaff : ModItem
+{
+    public override void SetDefaults() { }
+
+    public override bool Shoot(Player player, IEntitySource source, Vector2 position, Vector2 velocity, int type, int damage, float knockback)
+    {
+        return true;
+    }
+}
+"""
+
+    violations = validate_cs(code)
+
+    assert any("EntitySource_ItemUse_WithAmmo" in violation for violation in violations)
+
+
+def test_validate_cs_rejects_mathhelper_sin_cos() -> None:
+    code = """
+using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
+using Microsoft.Xna.Framework;
+
+public class BadStaff : ModItem
+{
+    public override void SetDefaults()
+    {
+        float wave = MathHelper.Sin(0.5f) + MathHelper.Cos(0.5f);
+    }
+}
+"""
+
+    violations = validate_cs(code)
+
+    assert any("MathHelper.Sin" in violation for violation in violations)
 
 
 @pytest.mark.parametrize(

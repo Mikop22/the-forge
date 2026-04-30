@@ -25,6 +25,15 @@ func TestAutocompleteReturnsAllOnSlashOnly(t *testing.T) {
 	}
 }
 
+func TestAutocompleteHidesVariantsCommand(t *testing.T) {
+	items := filterAutocomplete("/")
+	for _, item := range items {
+		if item.Slash == "/variants" {
+			t.Fatal("autocomplete shows /variants, want hidden until variants UX is ready")
+		}
+	}
+}
+
 func TestAutocompleteReturnsNilOnNonSlash(t *testing.T) {
 	items := filterAutocomplete("radiant spear")
 	if items != nil {
@@ -75,8 +84,8 @@ func TestAutocompleteDrawerHighlightsSelectedRow(t *testing.T) {
 	m.width = 120
 
 	got := m.View()
-	if !strings.Contains(got, "/variants") {
-		t.Fatalf("view = %q, want /variants in drawer", got)
+	if !strings.Contains(got, "/history") {
+		t.Fatalf("view = %q, want /history in drawer", got)
 	}
 }
 
@@ -91,6 +100,23 @@ func TestAutocompleteDownArrowMovesSelection(t *testing.T) {
 
 	if next.autocompleteIndex != 1 {
 		t.Fatalf("autocompleteIndex after Down = %d, want 1", next.autocompleteIndex)
+	}
+}
+
+func TestAutocompleteDownArrowMovesSelectionInStagingCommandMode(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.state = screenStaging
+	m.commandMode = true
+	m.commandInput.Focus()
+	m.commandInput.SetValue("/")
+	m.autocompleteIndex = 0
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next := updated.(model)
+
+	if next.autocompleteIndex != 1 {
+		t.Fatalf("autocompleteIndex after Down in staging command mode = %d, want 1", next.autocompleteIndex)
 	}
 }
 
@@ -197,18 +223,6 @@ func TestAutocompleteDrawerShowsNoMatchHint(t *testing.T) {
 	}
 }
 
-func TestVariantsArgHintIsDescriptive(t *testing.T) {
-	for _, e := range autocompleteRegistry {
-		if e.Slash == "/variants" {
-			if e.ArgHint == "<direction>" {
-				t.Fatalf("/variants ArgHint = %q, want something descriptive like '<describe changes>'", e.ArgHint)
-			}
-			return
-		}
-	}
-	t.Fatal("/variants not found in autocompleteRegistry")
-}
-
 func TestAutocompleteEscDismissesDrawer(t *testing.T) {
 	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
@@ -233,13 +247,13 @@ func TestAutocompleteDrawerDimsBenchCommandsWhenNoBench(t *testing.T) {
 	if !strings.Contains(drawer, "/forge") {
 		t.Fatalf("drawer = %q, want /forge present", drawer)
 	}
-	if !strings.Contains(drawer, "/variants") {
-		t.Fatalf("drawer = %q, want /variants present (dimmed)", drawer)
+	if strings.Contains(drawer, "/variants") {
+		t.Fatalf("drawer = %q, want /variants hidden", drawer)
 	}
 
 	m.workshop.Bench.ItemID = "storm-brand"
 	drawer2 := renderAutocompleteDrawer(m)
-	if !strings.Contains(drawer2, "/variants") {
-		t.Fatalf("drawer2 = %q, want /variants present when bench active", drawer2)
+	if strings.Contains(drawer2, "/variants") {
+		t.Fatalf("drawer2 = %q, want /variants hidden when bench active", drawer2)
 	}
 }

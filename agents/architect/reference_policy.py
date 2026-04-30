@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import base64
+import asyncio
+import concurrent.futures
 import json
 import logging
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -20,6 +22,8 @@ except ImportError:
     from reference_finder import ReferenceCandidate
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 _REFERENCE_SYSTEM = """\
 You are a visual reference evaluator for a Terraria pixel art sprite generator.
@@ -237,7 +241,8 @@ class ReferencePolicy:
 
         for attempt in range(self._max_retries + 1):
             attempts += 1
-            candidates = self._finder.find_candidates(
+            candidates = _run_blocking_away_from_event_loop(
+                self._finder.find_candidates,
                 subject, prompt, attempt=attempt,
                 item_type=item_type, sub_type=sub_type,
             )
@@ -245,7 +250,8 @@ class ReferencePolicy:
                 notes.append("search_failed_or_empty")
                 continue
 
-            selected, reason = self._approver.approve(
+            selected, reason = _run_blocking_away_from_event_loop(
+                self._approver.approve,
                 prompt=prompt, subject=subject, candidates=candidates,
                 item_type=item_type, sub_type=sub_type,
             )
@@ -290,6 +296,22 @@ def _reference_result(
         "reference_attempts": attempts,
         "reference_notes": notes,
     }
+
+
+def _run_blocking_away_from_event_loop(
+    func: Callable[..., _T],
+    *args,
+    **kwargs,
+) -> _T:
+    """Run sync browser/LLM work off-thread when called from async orchestration."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return func(*args, **kwargs)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        return future.result()
 
 
 def _prompt_implies_reference(prompt: str) -> bool:

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	_ "image/png"
 	"math"
 	"os"
@@ -157,42 +156,66 @@ func (m model) updateStaging(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if m.commandMode {
+		if m.commandMode || strings.TrimSpace(m.commandInput.Value()) != "" || key.String() == "/" || key.String() == "tab" {
+			m.commandMode = false
+			m.commandInput.Focus()
+			m.workshopNotice = ""
 			switch key.Type {
 			case tea.KeyEsc:
-				m.commandMode = false
-				m.commandInput.Blur()
 				m.commandInput.SetValue("")
+				m.autocompleteIndex = 0
 				return m, nil
 			case tea.KeyEnter:
 				raw := strings.TrimSpace(m.commandInput.Value())
 				if raw == "" {
-					m.commandMode = false
-					m.commandInput.Blur()
+					m.autocompleteIndex = 0
 					return m, nil
 				}
-				m.commandMode = false
-				m.commandInput.Blur()
 				m.commandInput.SetValue("")
+				m.autocompleteIndex = 0
 				return m.handleShellCommand(raw)
+			}
+
+			if key.String() == "/" && strings.TrimSpace(m.commandInput.Value()) == "" {
+				m.commandInput.SetValue("/")
+				m.autocompleteIndex = 0
+				m.workshopNotice = ""
+				return m, nil
+			}
+
+			if entries := filterAutocomplete(m.commandInput.Value()); entries != nil {
+				switch key.Type {
+				case tea.KeyDown:
+					m.autocompleteIndex++
+					if m.autocompleteIndex >= len(entries) {
+						m.autocompleteIndex = len(entries) - 1
+					}
+					return m, nil
+				case tea.KeyUp:
+					m.autocompleteIndex--
+					if m.autocompleteIndex < 0 {
+						m.autocompleteIndex = 0
+					}
+					return m, nil
+				case tea.KeyTab:
+					if m.autocompleteIndex < len(entries) {
+						m.commandInput.SetValue(entries[m.autocompleteIndex].Slash + " ")
+						m.commandInput.CursorEnd()
+						m.autocompleteIndex = 0
+					}
+					return m, nil
+				}
 			}
 
 			var cmd tea.Cmd
 			m.commandInput, cmd = m.commandInput.Update(msg)
+			if filterAutocomplete(m.commandInput.Value()) == nil {
+				m.autocompleteIndex = 0
+			}
 			return m, cmd
 		}
 
 		switch key.String() {
-		case "/", "tab":
-			m.commandMode = true
-			m.commandInput.Focus()
-			if key.String() == "/" {
-				m.commandInput.SetValue("/")
-			} else {
-				m.commandInput.SetValue("")
-			}
-			m.workshopNotice = ""
-			return m, nil
 		case "c", "C":
 			m.resetForCraftAnother()
 			return m, nil
@@ -309,9 +332,7 @@ func (m model) stagingView() string {
 			if m.workshop.SessionID != "" {
 				headerLines = append(headerLines, styles.Hint.Render("Session "+m.workshop.SessionID))
 			}
-			if len(m.workshop.Shelf) == 0 {
-				headerLines = append(headerLines, styles.Hint.Render("Shelf empty — ask for variants next."))
-			} else {
+			if len(m.workshop.Shelf) > 0 {
 				headerLines = append(headerLines, styles.Hint.Render("Shelf"))
 				for i, variant := range m.workshop.Shelf {
 					line := fmt.Sprintf("  %d. %s", i+1, variant.Label)
@@ -422,13 +443,6 @@ func (m model) stagingView() string {
 				headerLines = append(headerLines, styles.Body.Render(fmt.Sprintf("%s %-10s %s", cursor, field.label, value)))
 			}
 			headerLines = append(headerLines, styles.Hint.Render("↑/↓ field  •  ←/→ adjust  •  Enter done"))
-		default:
-			headerLines = append(headerLines, "", styles.Hint.Render("Tab or / opens the director command bar"))
-			if m.commandMode {
-				headerLines = append(headerLines, "", styles.Subtitle.Render("Director"))
-				headerLines = append(headerLines, styles.PromptInput.Render(m.commandInput.View()))
-				headerLines = append(headerLines, styles.Hint.Render("Enter send  •  Esc cancel"))
-			}
 		}
 	}
 
@@ -458,8 +472,9 @@ func (m model) renderRuntimeState() string {
 	if m.workshop.Runtime.LastInjectStatus != "" {
 		lines = append(lines, styles.Hint.Render("Inject status: "+m.workshop.Runtime.LastInjectStatus))
 	}
-	if m.workshop.Runtime.LastRuntimeNote != "" {
-		lines = append(lines, styles.Hint.Render(m.workshop.Runtime.LastRuntimeNote))
+	note := strings.TrimSpace(m.workshop.Runtime.LastRuntimeNote)
+	if note != "" && !strings.EqualFold(note, "Runtime Offline") {
+		lines = append(lines, styles.Hint.Render(note))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -654,8 +669,9 @@ func isTransparent(c color.Color) bool {
 
 // renderSprite reads a PNG file and renders it as colored half-block (▀)
 // characters. Each character encodes two vertical pixels: top pixel as
-// foreground, bottom pixel as background. Transparent pixels use the
-// terminal default. Sprites are typically 32×32 or 64×64.
+// foreground, bottom pixel as background. Transparent pixels are shown on a
+// white matte so the preview resembles an image viewer. Sprites are typically
+// 32×32 or 64×64.
 func renderSprite(path string) string {
 	img, ok := loadSpriteImage(path)
 	if !ok {
@@ -679,38 +695,11 @@ func loadSpriteImage(path string) (image.Image, bool) {
 		return nil, false
 	}
 
-	bounds := img.Bounds()
-	minX, minY, maxX, maxY := bounds.Max.X, bounds.Max.Y, bounds.Min.X, bounds.Min.Y
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			if !isTransparent(img.At(x, y)) {
-				if x < minX {
-					minX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y > maxY {
-					maxY = y
-				}
-			}
-		}
-	}
-
-	if maxX < minX || maxY < minY {
-		return nil, false
-	}
-
-	cropRect := image.Rect(0, 0, maxX-minX+1, maxY-minY+1)
-	cropped := image.NewRGBA(cropRect)
-	draw.Draw(cropped, cropRect, img, image.Point{X: minX, Y: minY}, draw.Src)
-	return cropped, true
+	return img, true
 }
 
 func renderSpriteImage(img image.Image) string {
+	const previewScale = 2
 	bounds := img.Bounds()
 	cropW := bounds.Dx()
 	cropH := bounds.Dy()
@@ -731,8 +720,8 @@ func renderSpriteImage(img image.Image) string {
 		}
 	}
 
-	outW := cropW / scale
-	outH := cropH / scale
+	outW := (cropW * previewScale) / scale
+	outH := (cropH * previewScale) / scale
 	if outW == 0 {
 		outW = 1
 	}
@@ -742,8 +731,8 @@ func renderSpriteImage(img image.Image) string {
 
 	// Sample pixels with scaling.
 	pixel := func(px, py int) color.Color {
-		sx := bounds.Min.X + px*scale
-		sy := bounds.Min.Y + py*scale
+		sx := bounds.Min.X + (px*scale)/previewScale
+		sy := bounds.Min.Y + (py*scale)/previewScale
 		if sx >= bounds.Max.X || sy >= bounds.Max.Y {
 			return color.Transparent
 		}
@@ -766,14 +755,19 @@ func renderSpriteImage(img image.Image) string {
 
 			switch {
 			case topTrans && botTrans:
-				lineChars = append(lineChars, " ")
+				s := lipgloss.NewStyle().Background(colorSpriteBg)
+				lineChars = append(lineChars, s.Render(" "))
 			case topTrans:
 				// Only bottom pixel visible — use lower half block ▄
-				s := lipgloss.NewStyle().Foreground(lipgloss.Color(colorToHex(bottom)))
+				s := lipgloss.NewStyle().
+					Foreground(lipgloss.Color(colorToHex(bottom))).
+					Background(colorSpriteBg)
 				lineChars = append(lineChars, s.Render("▄"))
 			case botTrans:
 				// Only top pixel visible — use upper half block ▀
-				s := lipgloss.NewStyle().Foreground(lipgloss.Color(colorToHex(top)))
+				s := lipgloss.NewStyle().
+					Foreground(lipgloss.Color(colorToHex(top))).
+					Background(colorSpriteBg)
 				lineChars = append(lineChars, s.Render("▀"))
 			default:
 				// Both pixels visible — ▀ with top as fg, bottom as bg

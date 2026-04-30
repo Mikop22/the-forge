@@ -147,8 +147,9 @@ type model struct {
 	height       int
 	contentWidth int
 
-	craftedItems []craftedItem
-	workshop     workshopState
+	craftedItems   []craftedItem
+	generatedItems []libraryItem
+	workshop       workshopState
 
 	textInput    textinput.Model
 	previewInput textinput.Model
@@ -234,3 +235,4 @@ func (m model) shellSuggestion() string {
 
 	return "/variants <direction>"
 }
+

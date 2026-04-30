@@ -69,8 +69,28 @@ func TestStagingViewHidesHealthyIdleRuntimeDetails(t *testing.T) {
 	if strings.Contains(view, "[R] Reprompt sprite") {
 		t.Fatalf("stagingView() = %q, want legacy action hints removed", view)
 	}
-	if !strings.Contains(view, "Tab or / opens the director command bar") {
-		t.Fatalf("stagingView() = %q, want director command bar hint visible", view)
+	if strings.Contains(view, "Type / in the command bar") {
+		t.Fatalf("stagingView() = %q, want duplicate command hint removed", view)
+	}
+	if strings.Contains(view, "variants") {
+		t.Fatalf("stagingView() = %q, want variants hidden until variants UX is ready", view)
+	}
+}
+
+func TestStagingViewDoesNotDuplicateOfflineRuntimeNote(t *testing.T) {
+	m := initialModel()
+	item := craftedItem{label: "Storm Brand", contentType: "Weapon", subType: "Staff"}
+	m.previewItem = &item
+	m.workshop.SetBenchFromCraftedItem(item, map[string]interface{}{})
+	m.revealPhase = 3
+	m.workshop.Runtime = workshopRuntimeBanner{
+		BridgeAlive:     false,
+		LastRuntimeNote: "Runtime Offline",
+	}
+
+	view := m.stagingView()
+	if strings.Count(view, "Runtime Offline") > 1 {
+		t.Fatalf("stagingView() = %q, want Runtime Offline rendered once", view)
 	}
 }
 

@@ -156,6 +156,8 @@ RANGED_PROJECTILE_SUBTYPES: frozenset[str] = frozenset(
         "Tome",
         "Launcher",
         "Cannon",
+        "Hammer",
+        "Spear",
     }
 )
 ShotStyleLiteral = Literal[
@@ -532,11 +534,125 @@ class ProjectileVisuals(BaseModel):
 
     description: str = ""
     icon_size: list[int] = Field(default=[16, 16])
+    animation_tier: str = "static"
 
     @field_validator("icon_size", mode="before")
     @classmethod
     def clamp_icon_size(cls, v):
         return _clamp_icon_size(v, lo=10, hi=50, default=[16, 16])
+
+    @field_validator("animation_tier", mode="before")
+    @classmethod
+    def validate_animation_tier(cls, v: object) -> str:
+        value = str(v or "static").strip()
+        low = value.lower().replace(" ", "").replace("-", "_")
+        # LLM shorthand / product language → canonical Pixelsmith tokens
+        if low in ("tier3", "tier_3", "t3"):
+            return "generated_frames:3"
+        if low in ("tier2", "tier_2", "t2"):
+            return "generated_frames:2"
+        if value == "static":
+            return value
+        if re.match(r"^(?:vanilla_frames|generated_frames):[1-9]\d*$", value):
+            return value
+        raise ValueError(
+            "animation_tier must be static, vanilla_frames:N, or generated_frames:N"
+        )
+
+
+class SpectacleBasis(BaseModel):
+    cast_shape: list[str] = Field(default_factory=list)
+    projectile_body: list[str] = Field(default_factory=list)
+    motion_grammar: list[str] = Field(default_factory=list)
+    payoff: list[str] = Field(default_factory=list)
+    visual_language: list[str] = Field(default_factory=list)
+    world_interaction: list[str] = Field(default_factory=list)
+
+
+class SpectaclePlan(BaseModel):
+    """Authoring brief for bespoke Tier-3 projectile codegen."""
+
+    fantasy: str = ""
+    basis: SpectacleBasis = Field(default_factory=SpectacleBasis)
+    composition: str = ""
+    movement: str = ""
+    render_passes: list[str] = Field(default_factory=list)
+    ai_phases: list[str] = Field(default_factory=list)
+    impact_payoff: str = ""
+    sound_profile: str = ""
+    must_not_include: list[str] = Field(default_factory=list)
+    must_not_feel_like: list[str] = Field(default_factory=list)
+
+
+MechanicsAtomKind = Literal[
+    "charge_phase",
+    "singularity_projectile",
+    "beam_lance",
+    "gravity_pull_field",
+    "rift_trail",
+    "implosion_payoff",
+    "shock_ring_damage",
+    "bounded_terrain_carve",
+    "orbiting_convergence",
+    "delayed_detonation",
+    "summoned_construct",
+    "channel_cast",
+    "staged_release",
+    "rift_projectile",
+    "slow_drift",
+    "ricochet_path",
+    "portal_hop",
+    "time_slow_field",
+    "tile_scorch",
+    "satellite_fusion",
+    "phase_swap",
+    "inward_particle_flow",
+    "color_separation_distortion",
+]
+
+
+class MechanicsAtom(BaseModel):
+    """Executable Tier-3 capability atom selected by the planner."""
+
+    kind: MechanicsAtomKind
+    duration_ticks: Optional[int] = None
+    radius_tiles: Optional[int] = None
+    tile_limit: Optional[int] = None
+    speed: Optional[str] = None
+    strength: Optional[str] = None
+    scale_pulse: Optional[bool] = None
+    count: Optional[int] = None
+    width_tiles: Optional[int] = None
+    length_tiles: Optional[int] = None
+    angle_degrees: Optional[int] = None
+    notes: str = ""
+
+
+class MechanicsIR(BaseModel):
+    """Typed executable contract for Tier-3 bespoke codegen."""
+
+    atoms: list[MechanicsAtom] = Field(default_factory=list)
+    forbidden_atoms: list[str] = Field(default_factory=list)
+    composition: str = ""
+
+
+class ReferenceSlot(BaseModel):
+    needed: bool = False
+    subject: str = ""
+    protected_terms: list[str] = Field(default_factory=list)
+    image_url: str = ""
+    generation_mode: Literal["text_to_image", "image_to_image"] = "text_to_image"
+
+    @model_validator(mode="after")
+    def normalize_generation_mode(self):
+        if self.image_url:
+            self.generation_mode = "image_to_image"
+        return self
+
+
+class ReferenceSlots(BaseModel):
+    item: ReferenceSlot = Field(default_factory=ReferenceSlot)
+    projectile: ReferenceSlot = Field(default_factory=ReferenceSlot)
 
 
 class Presentation(BaseModel):
@@ -558,7 +674,9 @@ class LLMMechanics(BaseModel):
     combat_package: Optional[CombatPackageLiteral] = None
     delivery_style: Optional[DeliveryStyleLiteral] = None
     payoff_rate: Optional[PayoffRateLiteral] = None
-    custom_projectile: bool = False
+    # None = let the architect pipeline default direct-shot ranged to a generated
+    # ModProjectile; False = explicit opt-out to a vanilla ProjectileID; True = explicit.
+    custom_projectile: Optional[bool] = None
     shot_style: ShotStyleLiteral = "direct"
     crafting_material: Optional[str] = None
     crafting_cost: Optional[int] = None
@@ -635,7 +753,13 @@ class ToolStats(BaseModel):
 class LLMItemOutput(BaseModel):
     """Schema given to `with_structured_output()`.  No clamping here."""
 
-    item_name: str
+    item_name: str = Field(
+        description=(
+            "PascalCase source of truth for generated class names and asset filenames; "
+            "the item sprite is staged as Content/Items/<item_name>.png and custom "
+            "projectile sprites must match their ModProjectile class name."
+        )
+    )
     display_name: str
     tooltip: str = ""
     content_type: Literal["Weapon", "Accessory", "Summon", "Consumable", "Tool"] = (
@@ -651,6 +775,8 @@ class LLMItemOutput(BaseModel):
     consumable_stats: Optional[ConsumableStats] = None
     tool_stats: Optional[ToolStats] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
+    spectacle_plan: Optional[SpectaclePlan] = None
+    mechanics_ir: Optional[MechanicsIR] = None
     reference_needed: bool = False
     reference_subject: Optional[str] = None
     reference_image_url: Optional[str] = None
@@ -756,6 +882,13 @@ class Mechanics(BaseModel):
     def normalize_projectile_ids(cls, value):
         return _normalize_projectile_id(value)
 
+    @field_validator("custom_projectile", mode="before")
+    @classmethod
+    def custom_projectile_none_to_false(cls, v):
+        if v is None:
+            return False
+        return v
+
     @model_validator(mode="after")
     def coerce_custom_projectile(self):
         """custom_projectile is only meaningful for shot_style='direct'."""
@@ -795,6 +928,9 @@ class ItemManifest(BaseModel):
     consumable_stats: Optional[ConsumableStats] = None
     tool_stats: Optional[ToolStats] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
+    spectacle_plan: Optional[SpectaclePlan] = None
+    mechanics_ir: Optional[MechanicsIR] = None
+    references: ReferenceSlots = Field(default_factory=ReferenceSlots)
     resolved_combat: Optional[ResolvedCombat] = None
     reference_needed: bool = False
     reference_subject: Optional[str] = None
@@ -839,11 +975,15 @@ class ItemManifest(BaseModel):
             return self
         if self.sub_type not in RANGED_PROJECTILE_SUBTYPES:
             return self
+        if self.mechanics.custom_projectile:
+            return self
         shoot_projectile = self.mechanics.shoot_projectile
         if shoot_projectile is None or str(shoot_projectile).strip() == "":
             raise ValueError(
                 "mechanics.shoot_projectile is required for non-package "
-                f"ranged sub_type {self.sub_type}"
+                f"ranged sub_type {self.sub_type} when mechanics.custom_projectile "
+                "is false (set custom_projectile true for a generated ModProjectile, "
+                "or supply a valid ProjectileID for vanilla-homage)"
             )
         return self
 

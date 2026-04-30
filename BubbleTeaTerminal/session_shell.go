@@ -225,8 +225,10 @@ const forgeVersion = "v0.1.0"
 
 // renderSplash renders the startup header block matching Claude Code's layout:
 // [pixel art]  The Forge v0.1.0
-//              Architect · Pixelsmith · Forge Master
-//              ~/path
+//
+//	Architect · Pixelsmith · Forge Master
+//	~/path
+//
 // Replace the artLines below with your own pixel art.
 func renderSplash(m model) string {
 	artStyle := lipgloss.NewStyle().Foreground(colorGold)
@@ -273,7 +275,10 @@ func activeBenchLabel(m model) string {
 
 func (s sessionShellState) renderFeedContainer(m model, content string) string {
 	feed := s.renderEventRows(m)
-	body := []string{renderSplash(m), feed}
+	body := []string{renderSplash(m)}
+	if strings.TrimSpace(feed) != "" {
+		body = append(body, feed)
+	}
 	if m.shellError != "" {
 		body = append(body, styles.Error.Render(m.shellError))
 	} else if m.shellNotice != "" {

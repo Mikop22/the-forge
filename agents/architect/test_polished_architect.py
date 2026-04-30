@@ -91,6 +91,301 @@ class ArchitectManifestTests(unittest.TestCase):
         self.assertEqual(manifest["content_type"], "Accessory")
         self.assertEqual(manifest["sub_type"], "Charm")
 
+    def test_finalize_manifest_default_custom_projectile_from_llm_unset(self) -> None:
+        """`model_dump` with no combat_package + ranged + direct: pipeline turns on
+        custom_projectile and seeds projectile_visuals (matches LLM `None` fields)."""
+        base = {
+            "item_name": "VoidSidearm",
+            "display_name": "Void Sidearm",
+            "tooltip": "Fires void splinters.",
+            "content_type": "Weapon",
+            "type": "Weapon",
+            "sub_type": "Pistol",
+            "stats": {
+                "damage": 12,
+                "knockback": 2.0,
+                "crit_chance": 4,
+                "use_time": 18,
+                "auto_reuse": True,
+                "rarity": "ItemRarityID.Green",
+            },
+            "visuals": {"description": "Compact obsidian frame with purple glow."},
+            "mechanics": {
+                "shot_style": "direct",
+                "custom_projectile": None,
+                "shoot_projectile": None,
+                "crafting_material": "ItemID.Wood",
+                "crafting_cost": 5,
+                "crafting_tile": "TileID.WorkBenches",
+            },
+            "reference_needed": False,
+        }
+        with mock.patch("architect.architect.ReferencePolicy", autospec=True) as reference_policy_cls:
+            reference_policy_cls.return_value.resolve.return_value = {}
+            from architect.architect import ArchitectAgent
+
+            agent = ArchitectAgent(model_name="test-model")
+            out = agent._finalize_manifest_data(
+                base,
+                prompt="a void pistol with purple shards",
+                tier="Tier1_Starter",
+                content_type="Weapon",
+                sub_type="Pistol",
+            )
+        self.assertIs(out["mechanics"].get("custom_projectile"), True)
+        self.assertIsNone(out["mechanics"].get("shoot_projectile"))
+        pv = out.get("projectile_visuals") or {}
+        self.assertTrue(str(pv.get("description", "")).strip())
+
+    def test_finalize_manifest_reference_policy_uses_raw_prompt_terms(self) -> None:
+        seen = {}
+
+        class FakePolicy:
+            def resolve(self, **kwargs):
+                seen.update(kwargs)
+                return {}
+
+        from architect.architect import ArchitectAgent
+
+        agent = ArchitectAgent.__new__(ArchitectAgent)
+        agent._reference_policy = FakePolicy()
+        base = {
+            "item_name": "VoidTestStaff",
+            "display_name": "Void Test Staff",
+            "tooltip": "Channels a violet singularity.",
+            "content_type": "Weapon",
+            "type": "Weapon",
+            "sub_type": "Staff",
+            "stats": {
+                "damage": 58,
+                "knockback": 5.0,
+                "crit_chance": 4,
+                "use_time": 20,
+                "auto_reuse": True,
+                "rarity": "ItemRarityID.Pink",
+            },
+            "visuals": {"description": "forbidden staff"},
+            "mechanics": {
+                "shot_style": "direct",
+                "custom_projectile": True,
+                "shoot_projectile": None,
+                "crafting_material": "ItemID.SoulofLight",
+                "crafting_cost": 12,
+                "crafting_tile": "TileID.Anvils",
+            },
+            "projectile_visuals": {
+                "description": "violet singularity",
+                "icon_size": [20, 20],
+            },
+            "reference_needed": True,
+        }
+
+        agent._finalize_manifest_data(
+            base,
+            prompt="a forbidden staff that charges a slow black-violet singularity",
+            tier="Tier3_Hardmode",
+            content_type="Weapon",
+            sub_type="Staff",
+            raw_prompt="a staff that shoots gojo's hollow purple from jjk",
+            protected_reference_terms=["gojo", "hollow purple", "jjk"],
+            reference_subject="Gojo Hollow Purple from JJK",
+        )
+
+        self.assertIn("gojo", seen["prompt"])
+        self.assertIn("hollow purple", seen["prompt"])
+        self.assertEqual(seen["reference_subject"], "Gojo Hollow Purple from JJK")
+
+    def test_finalize_manifest_reference_subject_forces_reference_resolution(self) -> None:
+        seen = {}
+
+        class FakePolicy:
+            def resolve(self, **kwargs):
+                seen.update(kwargs)
+                return {}
+
+        from architect.architect import ArchitectAgent
+
+        agent = ArchitectAgent.__new__(ArchitectAgent)
+        agent._reference_policy = FakePolicy()
+        base = {
+            "item_name": "VoidTestStaff",
+            "display_name": "Void Test Staff",
+            "tooltip": "Channels a violet singularity.",
+            "content_type": "Weapon",
+            "type": "Weapon",
+            "sub_type": "Staff",
+            "stats": {
+                "damage": 58,
+                "knockback": 5.0,
+                "crit_chance": 4,
+                "use_time": 20,
+                "auto_reuse": True,
+                "rarity": "ItemRarityID.Pink",
+            },
+            "visuals": {"description": "forbidden staff"},
+            "mechanics": {
+                "shot_style": "direct",
+                "custom_projectile": True,
+                "shoot_projectile": None,
+                "crafting_material": "ItemID.SoulofLight",
+                "crafting_cost": 12,
+                "crafting_tile": "TileID.Anvils",
+            },
+            "projectile_visuals": {
+                "description": "violet singularity",
+                "icon_size": [20, 20],
+            },
+            "reference_needed": False,
+        }
+
+        agent._finalize_manifest_data(
+            base,
+            prompt="a forbidden staff that charges a slow black-violet singularity",
+            tier="Tier3_Hardmode",
+            content_type="Weapon",
+            sub_type="Staff",
+            raw_prompt="a staff that shoots gojo's hollow purple from jjk",
+            protected_reference_terms=["gojo", "hollow purple", "jjk"],
+            reference_subject="Gojo Hollow Purple from JJK",
+        )
+
+        self.assertIs(seen["reference_needed"], True)
+        self.assertEqual(seen["reference_subject"], "Gojo Hollow Purple from JJK")
+
+    def test_finalize_manifest_resolves_projectile_slot_reference(self) -> None:
+        calls = []
+
+        class FakePolicy:
+            def resolve(self, **kwargs):
+                calls.append(kwargs)
+                return {
+                    "reference_needed": True,
+                    "reference_subject": kwargs["reference_subject"],
+                    "reference_image_url": "https://example.test/hollow-purple.png",
+                    "generation_mode": "image_to_image",
+                    "reference_attempts": 1,
+                    "reference_notes": "approved",
+                }
+
+        from architect.architect import ArchitectAgent
+        from architect.prompt_director import ReferenceSlotIntent, ReferenceSlotsIntent
+
+        agent = ArchitectAgent.__new__(ArchitectAgent)
+        agent._reference_policy = FakePolicy()
+        base = {
+            "item_name": "VoidTestStaff",
+            "display_name": "Void Test Staff",
+            "tooltip": "Channels a violet singularity.",
+            "content_type": "Weapon",
+            "type": "Weapon",
+            "sub_type": "Staff",
+            "stats": {
+                "damage": 58,
+                "knockback": 5.0,
+                "crit_chance": 4,
+                "use_time": 20,
+                "auto_reuse": True,
+                "rarity": "ItemRarityID.Pink",
+            },
+            "visuals": {"description": "forbidden staff"},
+            "mechanics": {
+                "shot_style": "direct",
+                "custom_projectile": True,
+                "shoot_projectile": None,
+                "crafting_material": "ItemID.SoulofLight",
+                "crafting_cost": 12,
+                "crafting_tile": "TileID.Anvils",
+            },
+            "projectile_visuals": {
+                "description": "violet singularity",
+                "icon_size": [20, 20],
+            },
+            "reference_needed": False,
+        }
+
+        out = agent._finalize_manifest_data(
+            base,
+            prompt="a forbidden staff that charges a slow black-violet singularity",
+            tier="Tier3_Hardmode",
+            content_type="Weapon",
+            sub_type="Staff",
+            raw_prompt="a staff that shoots gojo's hollow purple from jjk",
+            protected_reference_terms=["gojo", "hollow purple", "jjk"],
+            reference_slots=ReferenceSlotsIntent(
+                projectile=ReferenceSlotIntent(
+                    subject="Gojo Hollow Purple from JJK",
+                    protected_terms=["gojo", "hollow purple", "jjk"],
+                )
+            ),
+        )
+
+        projectile_ref = out["references"]["projectile"]
+        self.assertIs(projectile_ref["needed"], True)
+        self.assertEqual(projectile_ref["subject"], "Gojo Hollow Purple from JJK")
+        self.assertEqual(
+            projectile_ref["image_url"], "https://example.test/hollow-purple.png"
+        )
+        self.assertEqual(projectile_ref["generation_mode"], "image_to_image")
+        self.assertTrue(calls)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn(
+            "Gojo Hollow Purple",
+            out["visuals"]["description"],
+        )
+        self.assertIn(
+            "Gojo Hollow Purple",
+            out["projectile_visuals"]["description"],
+        )
+
+    def test_finalize_manifest_seeds_tier3_spectacle_plan_for_direct_ranged(self) -> None:
+        base = {
+            "item_name": "VoidVioletPistol",
+            "display_name": "Void Violet",
+            "tooltip": "Fires a compressed violet annihilation round.",
+            "content_type": "Weapon",
+            "type": "Weapon",
+            "sub_type": "Pistol",
+            "stats": {
+                "damage": 34,
+                "knockback": 4.5,
+                "crit_chance": 4,
+                "use_time": 22,
+                "auto_reuse": True,
+                "rarity": "ItemRarityID.Orange",
+            },
+            "visuals": {"description": "Black pistol with a violet core."},
+            "mechanics": {
+                "shot_style": "direct",
+                "custom_projectile": None,
+                "shoot_projectile": None,
+                "crafting_material": "ItemID.Bone",
+                "crafting_cost": 15,
+                "crafting_tile": "TileID.Anvils",
+            },
+            "projectile_visuals": {
+                "description": "small violet projectile",
+                "animation_tier": "static",
+            },
+            "reference_needed": False,
+        }
+        with mock.patch("architect.architect.ReferencePolicy", autospec=True) as reference_policy_cls:
+            reference_policy_cls.return_value.resolve.return_value = {}
+            from architect.architect import ArchitectAgent
+
+            agent = ArchitectAgent(model_name="test-model")
+            out = agent._finalize_manifest_data(
+                base,
+                prompt="a black pistol that shoots gojo's hollow purple",
+                tier="Tier3_Hardmode",
+                content_type="Weapon",
+                sub_type="Pistol",
+            )
+
+        plan = out.get("spectacle_plan") or {}
+        self.assertIn("violet", plan.get("fantasy", "").lower())
+        self.assertGreaterEqual(len(plan.get("render_passes", [])), 3)
+        self.assertIn("bullet", plan.get("must_not_feel_like", []))
+
     def test_item_manifest_validates_buff_and_ammo_ids(self) -> None:
         manifest = ItemManifest.model_validate({
             "item_name": "FrostCharm",

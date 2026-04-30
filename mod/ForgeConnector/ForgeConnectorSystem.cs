@@ -74,7 +74,7 @@ namespace ForgeConnector
             _runtimeSummaryPath = Path.Combine(_modSourcesDir, "forge_runtime_summary.json");
             _lastInjectPath = Path.Combine(_modSourcesDir, "forge_last_inject.json");
             _lastInjectDebugPath = Path.Combine(_modSourcesDir, "forge_last_inject_debug.json");
-            _runtimeAssetDir = Path.Combine(_modSourcesDir, "ForgeConnectorInjectedAssets");
+            _runtimeAssetDir = Path.Combine(Path.GetDirectoryName(_modSourcesDir)!, "ForgeConnectorStagingAssets");
 
             RegisterTemplateTypeIds();
             ForgeLabTelemetry.Configure(_modSourcesDir);
@@ -224,6 +224,12 @@ namespace ForgeConnector
                 string itemName = root.TryGetProperty("item_name", out var nameEl) ? nameEl.GetString() ?? "" : "";
                 Mod.Logger.Info("[ForgeConnector] Injecting item: " + itemName);
 
+                if (GetBool(root, "compiled_mod_item", false))
+                {
+                    SpawnCompiledModItem(root, itemName);
+                    return;
+                }
+
                 var data = ParseManifest(root);
                 int itemSlot = ForgeManifestStore.NextItemSlot();
                 ForgeLabTelemetryContext telemetryContext = CreateTelemetryContext(root, data.Name);
@@ -349,6 +355,45 @@ namespace ForgeConnector
                 Mod.Logger.Error("[ForgeConnector] ProcessInject failed: " + ex);
                 WriteStatus("inject_failed", ex.Message, -1);
                 UpdateRuntimeSummaryState("inject_failed", clearLiveItemName: true, runtimeNote: ex.Message);
+            }
+        }
+
+        private void SpawnCompiledModItem(JsonElement root, string itemName)
+        {
+            string modName = GetStr(root, "mod_name", "ForgeGeneratedMod");
+            string compiledItemName = GetStr(root, "compiled_item_name", itemName);
+            string fullName = modName + "/" + compiledItemName;
+
+            Mod.Logger.Info("[ForgeConnector] Compiled item inject: " + fullName);
+
+            if (!ModContent.TryFind<ModItem>(fullName, out var modItem))
+            {
+                string message = "Compiled item not found: " + fullName;
+                Mod.Logger.Warn("[ForgeConnector] " + message);
+                WriteStatus("inject_failed", message, -1);
+                UpdateRuntimeSummaryState("inject_failed", clearLiveItemName: true, runtimeNote: message);
+                return;
+            }
+
+            int itemTypeId = modItem.Type;
+            bool spawned = itemTypeId > 0 && Main.LocalPlayer != null;
+            if (spawned)
+            {
+                Main.LocalPlayer.QuickSpawnItem(Main.LocalPlayer.GetSource_Misc("ForgeConnectorCompiled"), itemTypeId);
+                WriteStatus("item_injected", compiledItemName, -1);
+                UpdateRuntimeSummaryState("item_injected", liveItemName: compiledItemName, runtimeNote: "Compiled item delivered to inventory.");
+                Mod.Logger.Info("[ForgeConnector] Compiled item spawned successfully");
+            }
+            else if (itemTypeId > 0)
+            {
+                WriteStatus("item_pending", "No local player — open a world or unpause to receive the compiled item.", -1);
+                UpdateRuntimeSummaryState("item_pending", liveItemName: compiledItemName, runtimeNote: "No local player — open a world or unpause to receive the compiled item.");
+                Mod.Logger.Info("[ForgeConnector] Compiled item pending (LocalPlayer null)");
+            }
+            else
+            {
+                WriteStatus("inject_failed", "Invalid compiled item type id: " + fullName, -1);
+                UpdateRuntimeSummaryState("inject_failed", clearLiveItemName: true, runtimeNote: "Invalid compiled item type id: " + fullName);
             }
         }
 
@@ -956,7 +1001,7 @@ namespace ForgeConnector
             _runtimeSummaryPath = Path.Combine(_modSourcesDir, "forge_runtime_summary.json");
             _lastInjectPath = Path.Combine(_modSourcesDir, "forge_last_inject.json");
             _lastInjectDebugPath = Path.Combine(_modSourcesDir, "forge_last_inject_debug.json");
-            _runtimeAssetDir = Path.Combine(_modSourcesDir, "ForgeConnectorInjectedAssets");
+            _runtimeAssetDir = Path.Combine(Path.GetDirectoryName(_modSourcesDir)!, "ForgeConnectorStagingAssets");
             WriteHeartbeat();
             WriteRuntimeSummary(force: true);
             StartWatcher();
@@ -1456,7 +1501,7 @@ namespace ForgeConnector
                     pid        = Environment.ProcessId,
                     version    = "2.0.0",
                     mod_sources_dir = _modSourcesDir,
-                    capabilities = new[] { "reload", "inject" },
+                    capabilities = new[] { "reload", "inject", "compiled_item_inject" },
                 };
 
                 string json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });

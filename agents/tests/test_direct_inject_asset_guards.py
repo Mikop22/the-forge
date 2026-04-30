@@ -117,3 +117,16 @@ def test_forge_connector_source_preserves_last_inject_payload_and_stages_runtime
     assert "ForgeConnectorInjectedAssets" in source
     assert "StageRuntimeAsset(" in source
     assert "WriteLastInjectArtifacts(" in source
+
+
+def test_forge_connector_source_supports_compiled_mod_item_injection() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "mod"
+        / "ForgeConnector"
+        / "ForgeConnectorSystem.cs"
+    ).read_text(encoding="utf-8")
+
+    assert 'compiled_mod_item' in source
+    assert 'ModContent.TryFind<ModItem>' in source
+    assert 'QuickSpawnItem(Main.LocalPlayer.GetSource_Misc("ForgeConnectorCompiled")' in source

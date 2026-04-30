@@ -14,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"theforge/internal/ipc"
 )
@@ -174,8 +175,8 @@ func TestInitialModelHydratesSessionShellAndWorkshopStatusFromMirroredFiles(t *t
 	}
 
 	gotView := m.View()
-	if !strings.Contains(gotView, "↳ Welcome back") || !strings.Contains(gotView, "Bench ") || !strings.Contains(gotView, "Storm Brand") {
-		t.Fatalf("startup shell view = %q, want a welcome message for the active bench", gotView)
+	if strings.Contains(gotView, "↳ Welcome back") || strings.Contains(gotView, "Bench Storm Brand ready") {
+		t.Fatalf("startup shell view = %q, want duplicate active-bench welcome removed", gotView)
 	}
 }
 
@@ -345,8 +346,8 @@ func TestInitialModelShowsWelcomeMessageForActiveBench(t *testing.T) {
 
 	m := initialModel()
 	got := m.View()
-	if !strings.Contains(got, "↳ Welcome back") || !strings.Contains(got, "Bench ") || !strings.Contains(got, "AppleGun") {
-		t.Fatalf("startup shell view = %q, want a welcome message for the active bench", got)
+	if strings.Contains(got, "↳ Welcome back") || strings.Contains(got, "Bench AppleGun ready") {
+		t.Fatalf("startup shell view = %q, want duplicate active-bench welcome removed", got)
 	}
 }
 
@@ -492,11 +493,10 @@ func TestInputShellLocalCommandsRenderVisibleResponse(t *testing.T) {
 	}
 }
 
-func TestStagingCommandModeLocalCommandsRenderVisibleResponse(t *testing.T) {
+func TestStagingSharedCommandBarLocalCommandsRenderVisibleResponse(t *testing.T) {
 	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
 	m := initialModel()
 	m.state = screenStaging
-	m.commandMode = true
 	m.commandInput.Focus()
 	m.commandInput.SetValue("/status")
 	m.workshop.Bench = workshopBench{
@@ -515,7 +515,28 @@ func TestStagingCommandModeLocalCommandsRenderVisibleResponse(t *testing.T) {
 		t.Fatalf("staging shell view = %q, want visible /status response", got)
 	}
 	if next.commandMode {
-		t.Fatal("command mode still enabled after local command")
+		t.Fatal("director command mode enabled after local command")
+	}
+}
+
+func TestStagingSlashUsesSharedCommandBarWithoutDirectorPanel(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.state = screenStaging
+	m.commandMode = false
+	m.commandInput.SetValue("")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	next := updated.(model)
+
+	if next.commandMode {
+		t.Fatal("slash opened director command mode, want shared command bar")
+	}
+	if next.commandInput.Value() != "/" {
+		t.Fatalf("command input = %q, want slash in shared command bar", next.commandInput.Value())
+	}
+	if strings.Contains(next.View(), "Director") {
+		t.Fatalf("view contains Director panel: %q", next.View())
 	}
 }
 
@@ -578,6 +599,65 @@ func writeStagingPreviewSprite(t *testing.T, dir string, name string) string {
 		t.Fatalf("encode preview sprite: %v", err)
 	}
 	return path
+}
+
+func TestRenderSpriteImageUsesWhiteMatteForTransparentPixels(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(previousProfile)
+	})
+
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.Transparent)
+	img.Set(0, 1, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	img.Set(1, 0, color.RGBA{R: 0, G: 255, B: 0, A: 255})
+	img.Set(1, 1, color.Transparent)
+
+	got := renderSpriteImage(img)
+
+	if !strings.Contains(got, "255;255;255") {
+		t.Fatalf("renderSpriteImage() = %q, want white matte background for transparent pixels", got)
+	}
+}
+
+func TestSpritePreviewPreservesFullCanvasAndUpscalesTwoX(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "padded.png")
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	img.Set(2, 1, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create padded sprite: %v", err)
+	}
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("encode padded sprite: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close padded sprite: %v", err)
+	}
+
+	loaded, ok := loadSpriteImage(path)
+	if !ok {
+		t.Fatal("loadSpriteImage() = false, want padded sprite to load")
+	}
+	if got := loaded.Bounds().Dx(); got != 4 {
+		t.Fatalf("loaded width = %d, want full canvas width 4", got)
+	}
+	if got := loaded.Bounds().Dy(); got != 4 {
+		t.Fatalf("loaded height = %d, want full canvas height 4", got)
+	}
+
+	rendered := renderSpriteImage(loaded)
+	lines := strings.Split(rendered, "\n")
+	if got := len(lines); got != 4 {
+		t.Fatalf("rendered rows = %d, want 2x canvas height rendered as 4 terminal rows", got)
+	}
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got != 8 {
+			t.Fatalf("rendered line %d width = %d, want 2x canvas width 8\n%s", i, got, rendered)
+		}
+	}
 }
 
 func TestStagingViewPreviewLinesDoNotExceedTerminalWidth(t *testing.T) {
@@ -839,12 +919,11 @@ func TestSessionShellAnchorsToBottomOfTerminal(t *testing.T) {
 	if firstNonEmpty <= 0 {
 		t.Fatalf("session shell render = %q, want the first non-empty line to appear after leading terminal whitespace", got)
 	}
-	// Splash header renders before the welcome message; verify both are present.
 	if !strings.Contains(got, "The Forge") {
 		t.Fatalf("session shell render = %q, want splash header", got)
 	}
-	if !strings.Contains(got, "↳ Welcome back") {
-		t.Fatalf("session shell render = %q, want the welcome message", got)
+	if strings.Contains(got, "↳ Welcome back") {
+		t.Fatalf("session shell render = %q, want duplicate welcome message removed", got)
 	}
 }
 
@@ -857,25 +936,25 @@ func TestSessionShellDoesNotLeaveLargeGapBeforePrompt(t *testing.T) {
 
 	got := m.View()
 	lines := strings.Split(got, "\n")
-	statusIndex := -1
+	splashIndex := -1
 	promptIndex := -1
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if statusIndex < 0 && strings.HasPrefix(trimmed, "↳ Welcome back") {
-			statusIndex = i
+		if splashIndex < 0 && strings.Contains(trimmed, "The Forge") {
+			splashIndex = i
 		}
 		if strings.HasPrefix(trimmed, ">") {
 			promptIndex = i
 			break
 		}
 	}
-	if statusIndex < 0 {
-		t.Fatalf("session shell render = %q, want a status line", got)
+	if splashIndex < 0 {
+		t.Fatalf("session shell render = %q, want splash header", got)
 	}
 	if promptIndex < 0 {
 		t.Fatalf("session shell render = %q, want a visible prompt line", got)
 	}
-	if promptIndex-statusIndex > 4 {
+	if promptIndex-splashIndex > 6 {
 		t.Fatalf("session shell render = %q, want the prompt to sit directly under the separator line", got)
 	}
 }

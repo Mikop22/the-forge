@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -145,7 +147,7 @@ func parseGenerationStatusBytes(data []byte) GenerationStatus {
 }
 
 func mergeGatekeeperGenerationStatus(root GenerationStatus, gkRaw []byte) GenerationStatus {
-	if root.Status == "ready" {
+	if root.Status == "ready" || root.Status == "error" {
 		return root
 	}
 	var gk map[string]interface{}
@@ -383,27 +385,70 @@ func WriteWorkshopRequest(payload map[string]interface{}) error {
 	return writeJSONAtomic(filepath.Join(dir, "workshop_request.json"), payload, true)
 }
 
-func readHeartbeatFile(path string) bool {
+func readHeartbeatPID(path string) (int, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return 0, false
 	}
 	var hb map[string]interface{}
 	if err := json.Unmarshal(data, &hb); err != nil {
-		return false
+		return 0, false
 	}
 	if status, _ := hb["status"].(string); status != "listening" {
-		return false
+		return 0, false
 	}
 	pidFloat, ok := hb["pid"].(float64)
 	if !ok {
+		return 0, false
+	}
+	return int(pidFloat), true
+}
+
+func readHeartbeatFile(path string) bool {
+	pid, ok := readHeartbeatPID(path)
+	if !ok {
 		return false
 	}
-	proc, err := os.FindProcess(int(pidFloat))
+	return processAlive(pid)
+}
+
+func processStatAlive(stat string) bool {
+	return !strings.HasPrefix(strings.TrimSpace(stat), "Z")
+}
+
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false
 	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	if proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "stat=").Output()
+	if err != nil {
+		return true
+	}
+	return processStatAlive(string(out))
+}
+
+func processCommandLine(pid int) (string, error) {
+	if runtime.GOOS == "windows" {
+		return "", fmt.Errorf("process command-line verification is unsupported on windows")
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func processLooksLikeForgeOrchestrator(pid int) bool {
+	cmdline, err := processCommandLine(pid)
+	if err != nil {
+		return false
+	}
+	normalized := filepath.ToSlash(cmdline)
+	return strings.Contains(normalized, "orchestrator.py")
 }
 
 func ReadBridgeHeartbeat() bool {
@@ -532,15 +577,52 @@ func ParseDotEnv(path string) []string {
 	return pairs
 }
 
-func EnsureOrchestrator() {
+func stopProcessFromHeartbeat(path string) {
+	pid, ok := readHeartbeatPID(path)
+	if !ok {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil || !processAlive(pid) {
+		return
+	}
+	if !processLooksLikeForgeOrchestrator(pid) {
+		_ = os.Remove(path)
+		return
+	}
+	_ = proc.Signal(syscall.SIGTERM)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if proc.Signal(syscall.Signal(0)) != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = proc.Kill()
+}
+
+func stopOwnedProcess(cmd *exec.Cmd, done <-chan error) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-done:
+		return
+	case <-time.After(2 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+	}
+}
+
+func StartOrchestratorSession() func() {
 	orchPath := findOrchestratorPath()
 	if orchPath == "" {
 		fmt.Fprintln(os.Stderr, "[forge] orchestrator.py not found; set FORGE_ORCHESTRATOR_PATH or run from the project root")
-		return
+		return func() {}
 	}
-	if ReadOrchestratorHeartbeat() {
-		return
-	}
+	stopProcessFromHeartbeat(filepath.Join(modsources.Dir(), "orchestrator_alive.json"))
 
 	agentsDir := filepath.Dir(orchPath)
 	logPath := filepath.Join(agentsDir, "orchestrator.log")
@@ -561,5 +643,24 @@ func EnsureOrchestrator() {
 	}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "[forge] failed to start orchestrator: %v\n", err)
+		if logFile != nil {
+			_ = logFile.Close()
+		}
+		return func() {}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
+	}()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			stopOwnedProcess(cmd, done)
+		})
 	}
 }

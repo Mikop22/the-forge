@@ -115,12 +115,6 @@ func (s sessionShellState) renderEventRow(event sessionEvent) string {
 
 func (s sessionShellState) renderEventRows(m model) string {
 	if len(s.events) == 0 {
-		if benchLabel := activeBenchLabel(m); benchLabel != "" {
-			return strings.Join([]string{
-				styles.Hint.Render("↳ Welcome back"),
-				styles.Body.Render("  Bench "+styles.TitleRune.Render(benchLabel)+" ready."),
-			}, "\n")
-		}
 		return ""
 	}
 

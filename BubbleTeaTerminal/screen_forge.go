@@ -111,6 +111,9 @@ func (m model) updateForge(msg tea.Msg) (tea.Model, tea.Cmd) {
 		item := m.buildCraftedItem()
 		m.previewItem = &item
 		m.workshop.SetBenchFromCraftedItem(item, m.forgeManifest)
+		libraryItem := libraryItemFromState(item, m.forgeManifest)
+		m.generatedItems = upsertLibraryItem(m.generatedItems, libraryItem)
+		saveLibraryItems(m.generatedItems)
 		m.previewMode = previewModeActions
 		m.statEditIndex = 0
 		m.previewInput.SetValue("")

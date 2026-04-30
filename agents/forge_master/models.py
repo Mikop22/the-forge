@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Literal, Optional
 
@@ -102,6 +103,121 @@ class ProjectileVisuals(BaseModel):
 
     description: str = ""
     icon_size: list[int] = Field(default=[16, 16])
+    foreground_bbox: list[int] = Field(default_factory=list)
+    hitbox_size: list[int] = Field(default_factory=list)
+    animation_tier: str = "static"
+
+    @field_validator("animation_tier", mode="before")
+    @classmethod
+    def validate_animation_tier(cls, v: object) -> str:
+        value = str(v or "static").strip()
+        low = value.lower().replace(" ", "").replace("-", "_")
+        if low in ("tier3", "tier_3", "t3"):
+            return "generated_frames:3"
+        if low in ("tier2", "tier_2", "t2"):
+            return "generated_frames:2"
+        if value == "static":
+            return value
+        if re.match(r"^(?:vanilla_frames|generated_frames):[1-9]\d*$", value):
+            return value
+        raise ValueError(
+            "animation_tier must be static, vanilla_frames:N, or generated_frames:N"
+        )
+
+
+class SpectacleBasis(BaseModel):
+    cast_shape: list[str] = Field(default_factory=list)
+    projectile_body: list[str] = Field(default_factory=list)
+    motion_grammar: list[str] = Field(default_factory=list)
+    payoff: list[str] = Field(default_factory=list)
+    visual_language: list[str] = Field(default_factory=list)
+    world_interaction: list[str] = Field(default_factory=list)
+
+
+class SpectaclePlan(BaseModel):
+    """Authoring brief for bespoke Tier-3 projectile codegen."""
+
+    fantasy: str = ""
+    basis: SpectacleBasis = Field(default_factory=SpectacleBasis)
+    composition: str = ""
+    movement: str = ""
+    render_passes: list[str] = Field(default_factory=list)
+    ai_phases: list[str] = Field(default_factory=list)
+    impact_payoff: str = ""
+    sound_profile: str = ""
+    must_not_include: list[str] = Field(default_factory=list)
+    must_not_feel_like: list[str] = Field(default_factory=list)
+
+
+MechanicsAtomKind = Literal[
+    "charge_phase",
+    "singularity_projectile",
+    "beam_lance",
+    "gravity_pull_field",
+    "rift_trail",
+    "implosion_payoff",
+    "shock_ring_damage",
+    "bounded_terrain_carve",
+    "orbiting_convergence",
+    "delayed_detonation",
+    "summoned_construct",
+    "channel_cast",
+    "staged_release",
+    "rift_projectile",
+    "slow_drift",
+    "ricochet_path",
+    "portal_hop",
+    "time_slow_field",
+    "tile_scorch",
+    "satellite_fusion",
+    "phase_swap",
+    "inward_particle_flow",
+    "color_separation_distortion",
+]
+
+
+class MechanicsAtom(BaseModel):
+    """Executable Tier-3 capability atom selected by the planner."""
+
+    kind: MechanicsAtomKind
+    duration_ticks: Optional[int] = None
+    radius_tiles: Optional[int] = None
+    tile_limit: Optional[int] = None
+    speed: Optional[str] = None
+    strength: Optional[str] = None
+    scale_pulse: Optional[bool] = None
+    count: Optional[int] = None
+    width_tiles: Optional[int] = None
+    length_tiles: Optional[int] = None
+    angle_degrees: Optional[int] = None
+    notes: str = ""
+
+
+class MechanicsIR(BaseModel):
+    """Typed executable contract for Tier-3 bespoke codegen."""
+
+    atoms: list[MechanicsAtom] = Field(default_factory=list)
+    forbidden_atoms: list[str] = Field(default_factory=list)
+    composition: str = ""
+
+
+class ReferenceSlot(BaseModel):
+    needed: bool = False
+    subject: str = ""
+    protected_terms: list[str] = Field(default_factory=list)
+    image_url: str = ""
+    generation_mode: Literal["text_to_image", "image_to_image"] = "text_to_image"
+
+    @model_validator(mode="after")
+    def normalize_generation_mode(self):
+        if self.image_url:
+            self.generation_mode = "image_to_image"
+        return self
+
+
+class ReferenceSlots(BaseModel):
+    item: ReferenceSlot = Field(default_factory=ReferenceSlot)
+    projectile: ReferenceSlot = Field(default_factory=ReferenceSlot)
 
 
 class ForgeManifest(BaseModel):
@@ -118,6 +234,9 @@ class ForgeManifest(BaseModel):
     tool_stats: Optional[ManifestToolStats] = None
     presentation: Optional[Presentation] = None
     projectile_visuals: Optional[ProjectileVisuals] = None
+    spectacle_plan: Optional[SpectaclePlan] = None
+    mechanics_ir: Optional[MechanicsIR] = None
+    references: ReferenceSlots = Field(default_factory=ReferenceSlots)
     resolved_combat: Optional[ResolvedCombat] = None
     fallback_reason: Optional[str] = None
 

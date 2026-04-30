@@ -7,15 +7,16 @@ import (
 )
 
 type autocompleteEntry struct {
-	Slash        string
-	ArgHint      string
-	Desc         string
+	Slash         string
+	ArgHint       string
+	Desc          string
 	RequiresBench bool
 }
 
 var autocompleteRegistry = []autocompleteEntry{
 	{"/forge", "<prompt>", "Generate a new item from scratch", false},
-	{"/variants", "<describe changes>", "Generate shelf variants from the bench", true},
+	{"/history", "", "Show generated items you can return to", false},
+	{"/view", "<number-or-name>", "Preview a generated item from history", false},
 	{"/bench", "<id or number>", "Set a shelf variant as the active bench", true},
 	{"/try", "", "Reinject the current bench item into Terraria", true},
 	{"/restore", "baseline | live", "Restore bench to a previous state", true},
@@ -23,7 +24,6 @@ var autocompleteRegistry = []autocompleteEntry{
 	{"/memory", "", "Show pinned memory notes", false},
 	{"/what-changed", "", "Summarise changes since last bench", false},
 	{"/clear", "", "Clear the active bench and shelf", false},
-	{"/history", "", "List items accepted this session", false},
 	{"/help", "", "List all available commands", false},
 }
 

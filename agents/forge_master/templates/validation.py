@@ -40,6 +40,14 @@ BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "BANNED: Old OnHitNPC signature. ModItem must use (Player player, NPC target, NPC.HitInfo hit, int damageDone); ModProjectile must use (NPC target, NPC.HitInfo hit, int damageDone).",
     ),
     (
+        re.compile(r"override\s+bool\s+Shoot\s*\(\s*Player\s+\w+\s*,\s*IEntitySource\s+\w+"),
+        "BANNED: Invalid ModItem.Shoot source parameter. Use EntitySource_ItemUse_WithAmmo source for tModLoader 1.4.4.",
+    ),
+    (
+        re.compile(r"\bMathHelper\.(?:Sin|Cos|Tan)\s*\("),
+        "BANNED: MathHelper.Sin/Cos/Tan do not exist. Use System.MathF.Sin/Cos/Tan.",
+    ),
+    (
         re.compile(r"mod\.GetItem\b"),
         "BANNED: mod.GetItem is 1.3 API. Use ModContent.GetInstance<T>() or ItemID.",
     ),

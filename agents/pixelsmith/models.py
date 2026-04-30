@@ -91,6 +91,9 @@ class ProjectileVisualSpec(BaseModel):
     description: str = ""
     icon_size: list[int] = Field(default=[16, 16])
     art_direction_profile: ArtDirectionProfileLiteral = "balanced"
+    foreground_bbox: list[int] = Field(default_factory=list)
+    hitbox_size: list[int] = Field(default_factory=list)
+    animation_tier: str = "static"
 
     @field_validator("icon_size", mode="before")
     @classmethod
@@ -98,6 +101,31 @@ class ProjectileVisualSpec(BaseModel):
         if len(v) != 2 or any(d < 1 for d in v):
             raise ValueError("icon_size must be [width, height] with positive values")
         return [int(d) for d in v]
+
+    @field_validator("animation_tier", mode="before")
+    @classmethod
+    def validate_animation_tier(cls, v: object) -> str:
+        value = str(v or "static").strip()
+        if value == "static":
+            return value
+        if re.match(r"^(?:vanilla_frames|generated_frames):[1-9]\d*$", value):
+            return value
+        raise ValueError(
+            "animation_tier must be static, vanilla_frames:N, or generated_frames:N"
+        )
+
+
+class ReferenceSlot(BaseModel):
+    needed: bool = False
+    subject: str = ""
+    protected_terms: list[str] = Field(default_factory=list)
+    image_url: str = ""
+    generation_mode: Literal["text_to_image", "image_to_image"] = "text_to_image"
+
+
+class ReferenceSlots(BaseModel):
+    item: ReferenceSlot = Field(default_factory=ReferenceSlot)
+    projectile: ReferenceSlot = Field(default_factory=ReferenceSlot)
 
 
 class PixelsmithInput(BaseModel):
@@ -112,6 +140,7 @@ class PixelsmithInput(BaseModel):
     reference_image_url: Optional[str] = None
     reference_subject: Optional[str] = None
     reference_notes: Optional[str] = None
+    references: ReferenceSlots = Field(default_factory=ReferenceSlots)
 
     @field_validator("item_name", mode="before")
     @classmethod
@@ -142,6 +171,8 @@ class PixelsmithOutput(BaseModel):
 
     item_sprite_path: str = ""
     projectile_sprite_path: Optional[str] = None
+    item_foreground_bbox: list[int] = Field(default_factory=list)
+    projectile_foreground_bbox: list[int] = Field(default_factory=list)
     status: Literal["success", "error"] = "success"
     error: Optional[PixelsmithError] = None
 

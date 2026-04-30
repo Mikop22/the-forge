@@ -344,3 +344,92 @@ func TestHistoryCommandEmptySession(t *testing.T) {
 		t.Fatalf("shellNotice = %q, want empty-session message", next.shellNotice)
 	}
 }
+
+func TestHelpHidesVariantsCommand(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+
+	m2, _ := m.handleShellCommand("/help")
+	next := m2.(model)
+
+	if strings.Contains(next.shellNotice, "/variants") {
+		t.Fatalf("help = %q, want /variants hidden until variants UX is ready", next.shellNotice)
+	}
+}
+
+func TestHistoryCommandListsGeneratedLibraryItems(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.generatedItems = []libraryItem{
+		{
+			Label:      "EmberstringBow",
+			SpritePath: "/tmp/EmberstringBow.png",
+			Manifest: map[string]interface{}{
+				"item_name":    "EmberstringBow",
+				"content_type": "Weapon",
+				"sub_type":     "Bow",
+			},
+		},
+	}
+
+	m2, _ := m.handleShellCommand("/history")
+	next := m2.(model)
+
+	if !strings.Contains(next.shellNotice, "1. EmberstringBow") {
+		t.Fatalf("shellNotice = %q, want generated item listed", next.shellNotice)
+	}
+}
+
+func TestHistoryCommandListsCurrentBenchWhenLibraryIsEmpty(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.workshop.Bench = workshopBench{
+		ItemID:     "emberstringbow",
+		Label:      "EmberstringBow",
+		SpritePath: "/tmp/EmberstringBow.png",
+		Manifest: map[string]interface{}{
+			"item_name":    "EmberstringBow",
+			"content_type": "Weapon",
+			"sub_type":     "Bow",
+		},
+	}
+
+	m2, _ := m.handleShellCommand("/history")
+	next := m2.(model)
+
+	if !strings.Contains(next.shellNotice, "1. EmberstringBow") {
+		t.Fatalf("shellNotice = %q, want current bench listed", next.shellNotice)
+	}
+}
+
+func TestViewCommandSwitchesToGeneratedLibraryItem(t *testing.T) {
+	t.Setenv("FORGE_MOD_SOURCES_DIR", t.TempDir())
+	m := initialModel()
+	m.generatedItems = []libraryItem{
+		{
+			Label:      "EmberstringBow",
+			SpritePath: "/tmp/EmberstringBow.png",
+			Manifest: map[string]interface{}{
+				"item_name":    "EmberstringBow",
+				"content_type": "Weapon",
+				"sub_type":     "Bow",
+				"stats": map[string]interface{}{
+					"damage": 12,
+				},
+			},
+		},
+	}
+
+	m2, _ := m.handleShellCommand("/view 1")
+	next := m2.(model)
+
+	if next.state != screenStaging {
+		t.Fatalf("state = %v, want staging", next.state)
+	}
+	if next.previewItem == nil || next.previewItem.label != "EmberstringBow" {
+		t.Fatalf("previewItem = %#v, want EmberstringBow", next.previewItem)
+	}
+	if next.workshop.Bench.Label != "EmberstringBow" {
+		t.Fatalf("bench label = %q, want EmberstringBow", next.workshop.Bench.Label)
+	}
+}

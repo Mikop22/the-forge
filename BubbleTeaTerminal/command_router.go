@@ -26,6 +26,7 @@ const (
 	commandActionHelp        commandAction = "help"
 	commandActionClear       commandAction = "clear"
 	commandActionHistory     commandAction = "history"
+	commandActionView        commandAction = "view"
 	commandActionUnsupported commandAction = "unsupported"
 )
 
@@ -130,6 +131,16 @@ func routeWorkshopCommand(input string, hasActiveBench bool, shelf []workshopVar
 			return commandRoute{Action: commandActionUnsupported, Directive: arg}
 		}
 		return commandRoute{Action: commandActionHistory}
+	case "library":
+		if strings.TrimSpace(arg) != "" {
+			return commandRoute{Action: commandActionUnsupported, Directive: arg}
+		}
+		return commandRoute{Action: commandActionHistory}
+	case "view", "open":
+		if strings.TrimSpace(arg) == "" {
+			return commandRoute{Action: commandActionUnsupported, Usage: "Usage: /view <number-or-name>"}
+		}
+		return commandRoute{Action: commandActionView, Directive: arg}
 	default:
 		return commandRoute{Action: commandActionUnsupported, Directive: arg}
 	}
@@ -159,16 +170,31 @@ func (m model) shellInfoResponse(route commandRoute) string {
 		}
 		return "What changed: bench " + m.workshop.Bench.Label + "; shelf variants " + strconv.Itoa(len(m.workshop.Shelf))
 	case commandActionHelp:
-		return "Commands: /forge, /variants, /bench, /try, /restore, /status, /memory, /what-changed, /clear, /history, /help"
+		return "Commands: /forge, /history, /view, /try, /bench, /restore, /status, /memory, /what-changed, /clear, /help"
 	case commandActionHistory:
-		if len(m.craftedItems) == 0 {
-			return "History: No items accepted this session"
+		generatedItems := m.libraryItemsWithCurrentBench()
+		parts := []string{}
+		if len(generatedItems) > 0 {
+			labels := make([]string, len(generatedItems))
+			for i, item := range generatedItems {
+				labels[i] = fmt.Sprintf("%d. %s", i+1, item.Label)
+			}
+			parts = append(parts, "Generated: "+strings.Join(labels, "  ·  "))
 		}
-		labels := make([]string, len(m.craftedItems))
-		for i, item := range m.craftedItems {
-			labels[i] = fmt.Sprintf("%d. %s", i+1, item.label)
+		if len(m.craftedItems) > 0 {
+			labels := make([]string, len(m.craftedItems))
+			for i, item := range m.craftedItems {
+				labels[i] = item.label
+			}
+			parts = append(parts, "Accepted: "+strings.Join(labels, "  ·  "))
 		}
-		return "History: " + strings.Join(labels, "  ·  ")
+		if len(m.workshop.Shelf) > 0 {
+			parts = append(parts, fmt.Sprintf("Shelf: %d variants", len(m.workshop.Shelf)))
+		}
+		if len(parts) == 0 {
+			return "History: No items generated yet"
+		}
+		return "History: " + strings.Join(parts, "; ")
 	case commandActionClear:
 		return ""
 	default:
@@ -284,6 +310,29 @@ func (m model) handleShellCommand(raw string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.tryCurrentBench()
+	case commandActionView:
+		item, ok := resolveLibraryItem(m.libraryItemsWithCurrentBench(), route.Directive)
+		if !ok {
+			m.shellError = "No generated item matches " + strings.TrimSpace(route.Directive)
+			m.errMsg = m.shellError
+			m.workshopNotice = m.shellError
+			return m, nil
+		}
+		crafted := item.craftedItem()
+		m.previewItem = &crafted
+		m.forgeItemName = item.Label
+		m.forgeManifest = item.Manifest
+		m.forgeSprPath = item.SpritePath
+		m.forgeProjPath = item.ProjectilePath
+		m.workshop.Bench = item.workshopBench()
+		if m.workshop.Bench.ItemID != "" {
+			m.workshop.SessionID = "bench-" + m.workshop.Bench.ItemID
+		}
+		m.state = screenStaging
+		m.revealPhase = 3
+		m.shellNotice = "Viewing " + item.Label
+		m.workshopNotice = m.shellNotice
+		return m, nil
 	case commandActionClear:
 		m.workshop = newWorkshopState()
 		m.forgeItemName = ""

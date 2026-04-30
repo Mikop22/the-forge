@@ -41,7 +41,7 @@ UNSUPPORTED_FAMILY_FALLBACK_TOKENS = (
 LEGACY_HOMAGE_PROJECTILE_TOKENS = (
     "ProjectileID.*",
     "legacy projectile path",
-    "explicit vanilla homage weapons",
+    "explicit vanilla homage",
 )
 RANGED_PROJECTILE_SUBTYPES = (
     "Pistol",
@@ -62,8 +62,9 @@ UNSUPPORTED_FAMILY_FALLBACK_GUIDANCE = (
     "surface, use the legacy projectile fields instead of combat packages."
 )
 LEGACY_HOMAGE_PROJECTILE_GUIDANCE = (
-    "Within the legacy projectile path, raw `ProjectileID.*` is the primary "
-    "path ONLY for explicit vanilla homage weapons."
+    "Within the legacy projectile path, set `mechanics.custom_projectile` to "
+    "`false` and use a real `ProjectileID.*` ONLY for explicit vanilla homage or "
+    "when the design must match a specific stock projectile."
 )
 
 _PACKAGE_PRIMARY_FIELDS_TEXT = ", ".join(
@@ -123,20 +124,60 @@ CRITICAL — structured enum fields:
 - `mechanics.buff_id` follows the same rule as on_hit_buff.
 - `mechanics.ammo_id` must be a valid AmmoID.* constant or null.
 - {LEGACY_HOMAGE_PROJECTILE_GUIDANCE}
-- `{LEGACY_FALLBACK_FIELDS[0]}` is a legacy fallback field, not the primary
-  authoring path.
-- `{LEGACY_FALLBACK_FIELDS[1]}` is a legacy fallback field, not the primary
-  authoring path.
-- `{LEGACY_FALLBACK_FIELDS[2]}` is an internal compatibility field and legacy
-  fallback, not the primary authoring path.
-- Ranged non-package projectile requirement: when Sub Type is one of
-  {_RANGED_PROJECTILE_SUBTYPES_TEXT} and `{PACKAGE_PRIMARY_FIELDS[0]}` is null
-  or empty, you MUST populate `{LEGACY_FALLBACK_FIELDS[2]}` with a valid
-  `ProjectileID.*` constant. Examples: `ProjectileID.Bullet` for bullet-firing
-  guns, pistols, rifles, and shotguns; `ProjectileID.WoodenArrowFriendly` for
-  bows and repeaters; `ProjectileID.MagicMissile` for magic staffs, wands,
-  tomes, and spellbooks. Launchers can use `ProjectileID.RocketI`.
-- If you must use the legacy fields, `mechanics.shot_style` must be one of:
+- **Default for direct-shot ranged (no combat package):** When Sub Type is one of
+  {_RANGED_PROJECTILE_SUBTYPES_TEXT}, `{PACKAGE_PRIMARY_FIELDS[0]}` is null, and
+  `mechanics.shot_style` is `direct`, the Forge pipeline generates a
+  `ModProjectile` and a custom sprite (Pixelsmith / tier-3 art). Author that path
+  by leaving `mechanics.shoot_projectile` null, leaving `mechanics.custom_projectile`
+  unset (or true), and filling `projectile_visuals` with a clear, on-theme
+  description (and animation tier if relevant). Do **not** default to
+  `ProjectileID.Bullet`, `ProjectileID.MagicMissile`, or other stock projectiles
+  for original weapons — those look generic next to a bespoke item icon.
+- For Tier3 or highly novel direct-shot ranged ideas, also fill `spectacle_plan`.
+  This is the codegen brief for a hand-shaped projectile, not an art prompt.
+  Treat Tier3 as a composable mechanics basis, not a single archetype menu:
+  fill `basis` with selected vectors such as `cast_shape`, `projectile_body`,
+  `motion_grammar`, `payoff`, `visual_language`, and optional
+  `world_interaction` (for example tile scorch, controlled terrain carve, or
+  none). Then write `composition`: one concise sentence explaining how those
+  vectors combine into this weapon's unique mechanic. Include `fantasy`,
+  `movement`, `render_passes`, `ai_phases`, `impact_payoff`, `sound_profile`,
+  `must_not_include` concrete forbidden mechanics, and `must_not_feel_like`
+  anti-goals such as "bullet", "fireball", or "generic dust trail" when those
+  would make the weapon underwhelming.
+- For Tier3 bespoke weapons, also fill `mechanics_ir`. This is the executable
+  contract underneath `spectacle_plan`: choose composable capability atoms, not
+  full weapon templates and not product lanes; these are not full weapon templates.
+  Compose across basis axes such as `cast_shape`, `carrier`, `motion`,
+  `field_control`, `payoff`, `world_interaction`, `combo_logic`, and
+  `visual_grammar`; these are not complete weapon archetypes. Prefer 3-6
+  compatible atoms for a normal Tier3 weapon, and avoid reskinning every prompt
+  into the same singularity path.
+  Use `mechanics_ir.atoms` for
+  capabilities such as `charge_phase`, `channel_cast`, `singularity_projectile`,
+  `beam_lance`, `rift_projectile`, `gravity_pull_field`, `portal_hop`,
+  `delayed_detonation`, `summoned_construct`, `orbiting_convergence`,
+  `rift_trail`, `implosion_payoff`, `shock_ring_damage`,
+  or `bounded_terrain_carve`; use `mechanics_ir.forbidden_atoms` for mechanics
+  that must not appear, such as `target_stack_cashout` or `starfall_burst`.
+  `spectacle_plan` is the creative brief; `mechanics_ir` is the implementation
+  checklist.
+- **Opt out of custom art** only for vanilla homage or when a specific
+  `ProjectileID.*` is required: set `mechanics.custom_projectile` to `false` and
+  set `mechanics.shoot_projectile` to a valid `ProjectileID.*` (e.g.
+  `ProjectileID.Bullet` for bullet guns, `ProjectileID.WoodenArrowFriendly` for
+  bows, `ProjectileID.MagicMissile` for classic-staff feel). You must not invent
+  projectile names.
+- Ranged + no package + **non-direct** `shot_style`: do not request custom
+  projectile art — `mechanics.custom_projectile` must be false; those templates
+  use their own `ModProjectile` wiring. If you use legacy
+  `mechanics.shoot_projectile` for a non-direct style, it must be a valid
+  `ProjectileID.*` or null.
+- `mechanics.shoot_projectile` is an internal compatibility field. On the
+  custom-projectile default path, keep it null; the runtime uses your
+  `projectile_visuals` and generated class instead.
+- If you must use the legacy `mechanics.shot_style` list for non-direct fire,
+  values include:
   "direct" (default — straight-line fire toward cursor),
   "sky_strike" (projectiles SPAWN ABOVE THE SCREEN and fall DOWN toward the
     cursor position — like Starfury/Star Wrath. Use when the description says
@@ -162,14 +203,8 @@ CRITICAL — structured enum fields:
     sky_strike = projectiles come FROM ABOVE (spawn point is high in the sky).
     chain_lightning = projectile BOUNCES BETWEEN NPCs on the ground.
     Both can involve lightning visually, but the MECHANIC is completely different.
-- If using legacy `mechanics.shoot_projectile`, it must be a valid
-  `ProjectileID.*` constant (e.g. `ProjectileID.BallofFire`) or null. Do NOT
-  invent names. If unsure, set it to null.
-- `mechanics.custom_projectile` must ONLY be set to true when shot_style is
-  "direct" AND the user explicitly wants a custom projectile sprite. If
-  shot_style is ANY non-direct value (sky_strike, homing, boomerang, orbit,
-  explosion, pierce, chain_lightning, channeled), custom_projectile MUST be
-  false — those templates already provide their own ModProjectile classes.
+- `mechanics.shot_style` is a legacy field when not using a combat package;
+  non-direct styles force `mechanics.custom_projectile` false in validation.
 
 Keep crafting data empty unless the user explicitly describes a recipe.
 """

@@ -59,22 +59,27 @@ func initialModel() model {
 	wizardList.SetHeight(12)
 
 	workshop := loadWorkshopState()
+	generatedItems := loadLibraryItems()
+	if workshopBenchHasRenderableContent(workshop.Bench) {
+		generatedItems = upsertLibraryItem(generatedItems, libraryItemFromBench(workshop.Bench))
+	}
 	bridgeAlive := ipc.ReadBridgeHeartbeat()
 	workshop.Runtime.BridgeAlive = bridgeAlive
 	contentWidth := 120
 
 	return model{
-		state:        screenInput,
-		contentWidth: contentWidth,
-		textInput:    ti,
-		previewInput: pi,
-		commandInput: ci,
-		modeList:     modeList,
-		wizardList:   wizardList,
-		spinner:      s,
-		sessionShell: loadSessionShellState(),
-		workshop:     workshop,
-		bridgeAlive:  bridgeAlive,
+		state:          screenInput,
+		contentWidth:   contentWidth,
+		textInput:      ti,
+		previewInput:   pi,
+		commandInput:   ci,
+		modeList:       modeList,
+		wizardList:     wizardList,
+		spinner:        s,
+		sessionShell:   loadSessionShellState(),
+		generatedItems: generatedItems,
+		workshop:       workshop,
+		bridgeAlive:    bridgeAlive,
 	}
 }
 
@@ -93,6 +98,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -195,9 +202,10 @@ func buildMetaLine(item craftedItem) string {
 }
 
 func main() {
-	ipc.EnsureOrchestrator()
+	cleanupOrchestrator := ipc.StartOrchestratorSession()
+	defer cleanupOrchestrator()
 	ipc.WarnPathMismatches()
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error running forge ui: %v\n", err)
 		os.Exit(1)

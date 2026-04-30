@@ -3,16 +3,17 @@ package main
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorBg      = lipgloss.Color("#000000")
-	colorBgB     = lipgloss.Color("#0A0A0A")
-	colorPanel   = lipgloss.Color("#0D0D0D")
-	colorRune    = lipgloss.Color("#4DDB80")
-	colorRuneHot = lipgloss.Color("#7EE2A0")
-	colorGold    = lipgloss.Color("#C8A14A")
-	colorText    = lipgloss.Color("#FAFAFA")
-	colorDim     = lipgloss.Color("#7B738F")
-	colorError   = lipgloss.Color("#FF4D5A")
-	colorSigilBg = lipgloss.Color("#050505")
+	colorBg       = lipgloss.Color("#000000")
+	colorBgB      = lipgloss.Color("#0A0A0A")
+	colorPanel    = lipgloss.Color("#0D0D0D")
+	colorRune     = lipgloss.Color("#4DDB80")
+	colorRuneHot  = lipgloss.Color("#7EE2A0")
+	colorGold     = lipgloss.Color("#C8A14A")
+	colorText     = lipgloss.Color("#FAFAFA")
+	colorDim      = lipgloss.Color("#7B738F")
+	colorError    = lipgloss.Color("#FF4D5A")
+	colorSigilBg  = lipgloss.Color("#050505")
+	colorSpriteBg = lipgloss.Color("#FFFFFF")
 )
 
 type uiStyles struct {
@@ -99,7 +100,7 @@ func newStyles() uiStyles {
 		SpriteFrame: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorDim).
-			Background(lipgloss.Color("#2C2C2C")).
+			Background(colorSpriteBg).
 			Padding(0, 1),
 		StatsFrame: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

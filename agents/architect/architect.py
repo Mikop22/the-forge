@@ -47,6 +47,8 @@ try:  # Prefer package imports to avoid cross-agent module name collisions.
         LLMItemOutput,
         resolve_crafting,
     )
+    from architect.prompt_director import ReferenceSlotsIntent
+    from architect.ranged_defaults import apply_default_custom_projectile
     from architect import prompts as prompt_router
     from architect.weapon_prompt import (
         LegacyFallbackMarkerLiteral,
@@ -74,6 +76,8 @@ except ImportError:  # Fallback for direct script execution from the folder.
         LLMItemOutput,
         resolve_crafting,
     )
+    from prompt_director import ReferenceSlotsIntent
+    from ranged_defaults import apply_default_custom_projectile
     import prompts as prompt_router
     from weapon_prompt import (
         LegacyFallbackMarkerLiteral,
@@ -93,6 +97,92 @@ except ImportError:  # Fallback for direct script execution from the folder.
     from core.runtime_capabilities import RuntimeCapabilityMatrix
     from core.runtime_contracts import BehaviorContract as HiddenBehaviorContract
     from core.weapon_lab_models import RankingPolicy
+
+
+def _reference_prompt_with_protected_terms(
+    prompt: str, protected_terms: list[str]
+) -> str:
+    reference_prompt = prompt
+    lowered = reference_prompt.lower()
+    missing_terms = [
+        term for term in protected_terms if term and term.lower() not in lowered
+    ]
+    if missing_terms:
+        reference_prompt = f"{reference_prompt} {' '.join(missing_terms)}"
+    return reference_prompt
+
+
+def _slot_intents(reference_slots: ReferenceSlotsIntent | dict | None) -> dict:
+    if reference_slots is None:
+        return {}
+    if isinstance(reference_slots, ReferenceSlotsIntent):
+        return reference_slots.model_dump()
+    if isinstance(reference_slots, dict):
+        return reference_slots
+    return {}
+
+
+def _primary_slot_reference_subject(slot_intents: dict) -> str:
+    for slot_name in ("projectile", "item"):
+        intent = slot_intents.get(slot_name) or {}
+        if hasattr(intent, "model_dump"):
+            intent = intent.model_dump()
+        if isinstance(intent, dict):
+            subject = str(intent.get("subject") or "").strip()
+            if subject:
+                return subject
+    return ""
+
+
+def _reference_slot_from_result(
+    *,
+    needed: bool,
+    subject: str,
+    protected_terms: list[str],
+    reference_data: dict,
+) -> dict:
+    image_url = reference_data.get("reference_image_url") or ""
+    return {
+        "needed": needed,
+        "subject": reference_data.get("reference_subject") or subject,
+        "protected_terms": protected_terms,
+        "image_url": image_url,
+        "generation_mode": "image_to_image" if image_url else "text_to_image",
+    }
+
+
+def _same_reference_request(
+    *,
+    reference_data: dict,
+    subject: str,
+    protected_terms: list[str],
+    reference_prompt: str,
+    raw_prompt: str,
+) -> bool:
+    if not subject:
+        return False
+    resolved_subject = str(reference_data.get("reference_subject") or "").strip()
+    if resolved_subject.lower() != subject.lower():
+        return False
+    slot_prompt = _reference_prompt_with_protected_terms(raw_prompt, protected_terms)
+    return slot_prompt == reference_prompt
+
+
+def _append_reference_fidelity_clause(data: dict, *, field: str, subject: str) -> None:
+    fidelity_clause = (
+        f"Preserve exact subject identity for {subject.strip()}; "
+        "match the reference silhouette, proportions, and signature design motifs; "
+        "do not redesign core geometry."
+    )
+    visuals = data.get(field)
+    if not isinstance(visuals, dict):
+        visuals = {}
+    description = str(visuals.get("description") or "").strip()
+    if fidelity_clause.lower() not in description.lower():
+        visuals["description"] = (
+            f"{description}. {fidelity_clause}" if description else fidelity_clause
+        )
+    data[field] = visuals
 
 
 class ArchitectAgent:
@@ -145,6 +235,10 @@ class ArchitectAgent:
         content_type: str = "Weapon",
         sub_type: str = "",
         crafting_station: str | None = None,
+        raw_prompt: str | None = None,
+        protected_reference_terms: list[str] | None = None,
+        reference_subject: str | None = None,
+        reference_slots: ReferenceSlotsIntent | dict | None = None,
     ) -> dict:
         """Generate a fully validated item manifest.
 
@@ -197,6 +291,10 @@ class ArchitectAgent:
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
+            raw_prompt=raw_prompt,
+            protected_reference_terms=protected_reference_terms,
+            reference_subject=reference_subject,
+            reference_slots=reference_slots,
         )
 
     def generate_thesis_finalists(
@@ -230,6 +328,10 @@ class ArchitectAgent:
         sub_type: str = "Staff",
         crafting_station: str | None = None,
         legacy_fallback_marker: Optional[LegacyFallbackMarkerLiteral] = None,
+        raw_prompt: str | None = None,
+        protected_reference_terms: list[str] | None = None,
+        reference_subject: str | None = None,
+        reference_slots: ReferenceSlotsIntent | dict | None = None,
     ) -> dict:
         thesis = finalist.thesis
         package_key = thesis.combat_package
@@ -295,6 +397,10 @@ class ArchitectAgent:
                 content_type=content_type,
                 sub_type=sub_type,
                 crafting_station=crafting_station,
+                raw_prompt=raw_prompt,
+                protected_reference_terms=protected_reference_terms,
+                reference_subject=reference_subject,
+                reference_slots=reference_slots,
             )
             return self._attach_hidden_audition_context(
                 manifest=manifest,
@@ -320,6 +426,10 @@ class ArchitectAgent:
                 content_type=PACKAGE_FIRST_CONTENT_TYPE,
                 sub_type=PACKAGE_FIRST_SUB_TYPE,
                 crafting_station=crafting_station,
+                raw_prompt=raw_prompt,
+                protected_reference_terms=protected_reference_terms,
+                reference_subject=reference_subject,
+                reference_slots=reference_slots,
             )
         ).resolved_combat
         legacy_projection = resolved_combat.legacy_projection
@@ -352,6 +462,10 @@ class ArchitectAgent:
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
+            raw_prompt=raw_prompt,
+            protected_reference_terms=protected_reference_terms,
+            reference_subject=reference_subject,
+            reference_slots=reference_slots,
         )
         return self._attach_hidden_audition_context(
             manifest=manifest,
@@ -405,6 +519,10 @@ class ArchitectAgent:
         content_type: str,
         sub_type: str,
         crafting_station: str | None = None,
+        raw_prompt: str | None = None,
+        protected_reference_terms: list[str] | None = None,
+        reference_subject: str | None = None,
+        reference_slots: ReferenceSlotsIntent | dict | None = None,
     ) -> dict:
         crafting = resolve_crafting(prompt, tier, crafting_station)
         data["content_type"] = content_type
@@ -415,10 +533,25 @@ class ArchitectAgent:
         for key in ("crafting_material", "crafting_cost", "crafting_tile"):
             if not llm_crafting.get(key):
                 data["mechanics"][key] = crafting[key]
+        apply_default_custom_projectile(data, prompt, tier)
+        slot_intents = _slot_intents(reference_slots)
+        primary_slot_subject = _primary_slot_reference_subject(slot_intents)
+        top_level_reference_subject = (
+            data.get("reference_subject") or reference_subject or primary_slot_subject
+        )
+        reference_prompt = _reference_prompt_with_protected_terms(
+            raw_prompt or prompt,
+            protected_reference_terms or [],
+        )
+        forced_reference_needed = bool(
+            data.get("reference_needed", False)
+            or top_level_reference_subject
+            or protected_reference_terms
+        )
         reference_data = self._reference_policy.resolve(
-            prompt=prompt,
-            reference_needed=bool(data.get("reference_needed", False)),
-            reference_subject=data.get("reference_subject"),
+            prompt=reference_prompt,
+            reference_needed=forced_reference_needed,
+            reference_subject=top_level_reference_subject,
             item_type=data.get("content_type", data.get("type", "")),
             sub_type=data.get("sub_type", sub_type),
         )
@@ -426,6 +559,59 @@ class ArchitectAgent:
         data["generation_mode"] = (
             "image_to_image" if data.get("reference_image_url") else "text_to_image"
         )
+        if slot_intents:
+            references = dict(data.get("references") or {})
+            for slot_name in ("item", "projectile"):
+                intent = slot_intents.get(slot_name) or {}
+                if hasattr(intent, "model_dump"):
+                    intent = intent.model_dump()
+                if not isinstance(intent, dict):
+                    continue
+                subject = str(intent.get("subject") or "").strip()
+                terms = [
+                    str(term).strip()
+                    for term in intent.get("protected_terms", [])
+                    if str(term).strip()
+                ]
+                needed = bool(subject or terms)
+                if not needed:
+                    references.setdefault(
+                        slot_name,
+                        {
+                            "needed": False,
+                            "subject": "",
+                            "protected_terms": [],
+                            "image_url": "",
+                            "generation_mode": "text_to_image",
+                        },
+                    )
+                    continue
+                if _same_reference_request(
+                    reference_data=reference_data,
+                    subject=subject,
+                    protected_terms=terms,
+                    reference_prompt=reference_prompt,
+                    raw_prompt=raw_prompt or prompt,
+                ):
+                    slot_reference_data = reference_data
+                else:
+                    slot_reference_data = self._reference_policy.resolve(
+                        prompt=_reference_prompt_with_protected_terms(
+                            raw_prompt or prompt,
+                            terms,
+                        ),
+                        reference_needed=True,
+                        reference_subject=subject,
+                        item_type=data.get("content_type", data.get("type", "")),
+                        sub_type=data.get("sub_type", sub_type),
+                    )
+                references[slot_name] = _reference_slot_from_result(
+                    needed=True,
+                    subject=subject,
+                    protected_terms=terms,
+                    reference_data=slot_reference_data,
+                )
+            data["references"] = references
         self._enforce_reference_fidelity_prompting(data)
         manifest = ItemManifest.model_validate(data, context={"tier": tier})
         return manifest.model_dump()
@@ -435,23 +621,36 @@ class ArchitectAgent:
         """When reference mode is active, force the art prompt to prioritize
         object identity/silhouette fidelity over stylistic drift.
         """
+        references = data.get("references")
+        if isinstance(references, dict):
+            item_ref = references.get("item") if isinstance(references.get("item"), dict) else {}
+            projectile_ref = (
+                references.get("projectile")
+                if isinstance(references.get("projectile"), dict)
+                else {}
+            )
+            if item_ref.get("image_url"):
+                _append_reference_fidelity_clause(
+                    data,
+                    field="visuals",
+                    subject=str(item_ref.get("subject") or "the referenced item"),
+                )
+            if projectile_ref.get("image_url"):
+                _append_reference_fidelity_clause(
+                    data,
+                    field="projectile_visuals",
+                    subject=str(
+                        projectile_ref.get("subject") or "the referenced projectile"
+                    ),
+                )
+            if item_ref.get("image_url") or projectile_ref.get("image_url"):
+                return
+
         if data.get("generation_mode") != "image_to_image":
             return
 
         subject = str(data.get("reference_subject") or "the referenced subject").strip()
-        fidelity_clause = (
-            f"Preserve exact subject identity for {subject}; "
-            "match the reference silhouette, proportions, and signature design motifs; "
-            "do not redesign core geometry."
-        )
-
-        visuals = data.get("visuals") or {}
-        description = str(visuals.get("description") or "").strip()
-        if fidelity_clause.lower() not in description.lower():
-            visuals["description"] = (
-                f"{description}. {fidelity_clause}" if description else fidelity_clause
-            )
-        data["visuals"] = visuals
+        _append_reference_fidelity_clause(data, field="visuals", subject=subject)
 
         projectile_visuals = data.get("projectile_visuals")
         if isinstance(projectile_visuals, dict):

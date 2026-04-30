@@ -20,6 +20,7 @@ from architect.models import (
     VALID_BUFF_IDS,
     _normalize_buff_id,
 )
+from architect.ranged_defaults import apply_default_custom_projectile
 from forge_master.models import ManifestMechanics
 
 
@@ -222,6 +223,7 @@ class ShotStyleTests(unittest.TestCase):
     def test_llm_mechanics_defaults_to_direct(self) -> None:
         m = LLMMechanics()
         self.assertEqual(m.shot_style, "direct")
+        self.assertIsNone(m.custom_projectile)
 
     def test_llm_mechanics_accepts_sky_strike(self) -> None:
         m = LLMMechanics(shot_style="sky_strike")
@@ -568,6 +570,421 @@ def test_ranged_non_package_manifest_accepts_shoot_projectile() -> None:
     assert manifest.mechanics.shoot_projectile == "ProjectileID.Bullet"
 
 
+def test_ranged_non_package_manifest_allows_null_shoot_when_custom_projectile() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Pistol",
+            mechanics={
+                "custom_projectile": True,
+                "shoot_projectile": None,
+            },
+            projectile_visuals={
+                "description": "Violet void bolt, compact silhouette",
+                "animation_tier": "static",
+            },
+        )
+    )
+    assert manifest.mechanics.custom_projectile is True
+    assert manifest.mechanics.shoot_projectile is None
+
+
+def test_item_manifest_preserves_spectacle_plan() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Pistol",
+            mechanics={
+                "custom_projectile": True,
+                "shoot_projectile": None,
+            },
+            projectile_visuals={
+                "description": "large violet annihilation orb",
+                "animation_tier": "generated_frames:3",
+            },
+            spectacle_plan={
+                "fantasy": "compressed violet annihilation orb",
+                "movement": "fast shot with gravitational wobble",
+                "render_passes": ["afterimage trail", "outer glow", "white core"],
+                "ai_phases": ["spawn flare", "cruise", "impact collapse"],
+                "impact_payoff": "imploding ring and violet shock burst",
+                "sound_profile": "deep magic shot and low impact pulse",
+                "must_not_feel_like": ["bullet", "generic dust trail"],
+            },
+        )
+    )
+
+    assert manifest.spectacle_plan is not None
+    assert manifest.spectacle_plan.render_passes[0] == "afterimage trail"
+    assert "bullet" in manifest.spectacle_plan.must_not_feel_like
+
+
+def test_item_manifest_preserves_composable_spectacle_basis() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            mechanics={
+                "shot_style": "direct",
+                "custom_projectile": True,
+                "shoot_projectile": None,
+            },
+            projectile_visuals={
+                "description": "violet singularity orb",
+                "icon_size": [20, 20],
+            },
+            spectacle_plan={
+                "fantasy": "violet singularity",
+                "basis": {
+                    "cast_shape": ["charge-up"],
+                    "projectile_body": ["singularity orb", "rift seam"],
+                    "payoff": ["implosion", "shock ring"],
+                    "world_interaction": ["radial terrain carve", "tile scorch"],
+                },
+                "composition": "A slow violet singularity tears a rift and collapses into a shock ring.",
+                "must_not_include": ["starfall", "mark/cashout"],
+            },
+        ),
+        context={"tier": "Tier3_Hardmode"},
+    )
+
+    assert manifest.spectacle_plan is not None
+    assert manifest.spectacle_plan.basis.projectile_body == [
+        "singularity orb",
+        "rift seam",
+    ]
+    assert "radial terrain carve" in manifest.spectacle_plan.basis.world_interaction
+    assert "shock ring" in manifest.spectacle_plan.composition
+    assert "starfall" in manifest.spectacle_plan.must_not_include
+
+
+def test_item_manifest_preserves_tier3_mechanics_ir() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Staff",
+            mechanics={"custom_projectile": True, "shoot_projectile": None},
+            projectile_visuals={
+                "description": "violet singularity",
+                "icon_size": [20, 20],
+            },
+            spectacle_plan={"fantasy": "hollow purple singularity"},
+            mechanics_ir={
+                "atoms": [
+                    {"kind": "charge_phase", "duration_ticks": 18},
+                    {
+                        "kind": "singularity_projectile",
+                        "speed": "slow",
+                        "scale_pulse": True,
+                    },
+                    {
+                        "kind": "gravity_pull_field",
+                        "radius_tiles": 6,
+                        "strength": "medium",
+                    },
+                    {"kind": "implosion_payoff", "radius_tiles": 7},
+                    {
+                        "kind": "bounded_terrain_carve",
+                        "radius_tiles": 2,
+                        "tile_limit": 8,
+                    },
+                ],
+                "forbidden_atoms": ["target_stack_cashout", "starfall_burst"],
+                "composition": (
+                    "charge, release slow singularity, pull enemies/dust, "
+                    "implode and carve terrain"
+                ),
+            },
+        ),
+        context={"tier": "Tier3_Hardmode"},
+    )
+
+    assert manifest.mechanics_ir is not None
+    assert manifest.mechanics_ir.atoms[0].kind == "charge_phase"
+    assert "target_stack_cashout" in manifest.mechanics_ir.forbidden_atoms
+
+
+def test_item_manifest_preserves_slot_references() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Staff",
+            mechanics={"custom_projectile": True, "shoot_projectile": None},
+            projectile_visuals={
+                "description": "violet singularity",
+                "icon_size": [20, 20],
+            },
+            references={
+                "item": {"needed": False, "generation_mode": "text_to_image"},
+                "projectile": {
+                    "needed": True,
+                    "subject": "Gojo Hollow Purple from JJK",
+                    "protected_terms": ["gojo", "hollow purple", "jjk"],
+                    "image_url": "https://example.test/hollow-purple.png",
+                    "generation_mode": "image_to_image",
+                },
+            },
+        ),
+        context={"tier": "Tier3_Hardmode"},
+    )
+
+    assert manifest.references.projectile.needed is True
+    assert manifest.references.projectile.generation_mode == "image_to_image"
+    assert manifest.references.projectile.protected_terms == [
+        "gojo",
+        "hollow purple",
+        "jjk",
+    ]
+
+
+def test_item_manifest_preserves_expanded_mechanics_atoms() -> None:
+    manifest = ItemManifest.model_validate(
+        _base_manifest(
+            sub_type="Staff",
+            mechanics={"custom_projectile": True, "shoot_projectile": None},
+            projectile_visuals={"description": "rift lance", "icon_size": [20, 20]},
+            mechanics_ir={
+                "atoms": [
+                    {"kind": "beam_lance", "duration_ticks": 36},
+                    {"kind": "delayed_detonation", "duration_ticks": 45},
+                    {
+                        "kind": "summoned_construct",
+                        "notes": "temporary eye opens the rift",
+                    },
+                    {"kind": "portal_hop", "count": 3},
+                    {"kind": "ricochet_path", "count": 2},
+                    {"kind": "color_separation_distortion", "width_tiles": 3},
+                ]
+            },
+        ),
+        context={"tier": "Tier3_Hardmode"},
+    )
+
+    assert manifest.mechanics_ir is not None
+    assert [atom.kind for atom in manifest.mechanics_ir.atoms] == [
+        "beam_lance",
+        "delayed_detonation",
+        "summoned_construct",
+        "portal_hop",
+        "ricochet_path",
+        "color_separation_distortion",
+    ]
+    assert manifest.mechanics_ir.atoms[3].count == 3
+
+
+def test_apply_default_custom_projectile_respects_explicit_false() -> None:
+    data = _base_manifest(
+        sub_type="Pistol",
+        mechanics={"custom_projectile": False, "shoot_projectile": "ProjectileID.Bullet"},
+    )
+    apply_default_custom_projectile(data, "homage to the megashark")
+    assert data["mechanics"]["custom_projectile"] is False
+    assert data["mechanics"]["shoot_projectile"] == "ProjectileID.Bullet"
+
+
+def test_apply_default_custom_projectile_upgrades_false_without_projectile_id() -> None:
+    data = _base_manifest(
+        sub_type="Pistol",
+        mechanics={"custom_projectile": False, "shoot_projectile": None},
+    )
+    apply_default_custom_projectile(data, "void sidearm")
+    assert data["mechanics"]["custom_projectile"] is True
+    assert data["mechanics"]["shoot_projectile"] is None
+
+
+def test_apply_default_custom_projectile_upgrades_none_from_llm() -> None:
+    data = _base_manifest(
+        sub_type="Pistol",
+        mechanics={"custom_projectile": None, "shoot_projectile": None},
+    )
+    apply_default_custom_projectile(data, "void sidearm that fires purple shards")
+    assert data["mechanics"]["custom_projectile"] is True
+    assert data["mechanics"]["shoot_projectile"] is None
+
+
+def test_apply_default_custom_projectile_allows_effect_hammer_and_spear() -> None:
+    for sub_type in ("Hammer", "Spear"):
+        data = _base_manifest(
+            sub_type=sub_type,
+            mechanics={"custom_projectile": None, "shoot_projectile": None},
+            projectile_visuals={"description": f"{sub_type} projectile"},
+        )
+
+        apply_default_custom_projectile(
+            data,
+            f"a {sub_type.lower()} that launches a tier three projectile",
+            "Tier3_Hardmode",
+        )
+
+        assert data["mechanics"]["custom_projectile"] is True
+        assert data["mechanics"]["shoot_projectile"] is None
+        assert data.get("mechanics_ir")
+
+
+def test_apply_default_custom_projectile_normalizes_tier3_non_direct_without_projectile_id() -> None:
+    data = _base_manifest(
+        sub_type="Hammer",
+        mechanics={
+            "shot_style": "explosion",
+            "custom_projectile": False,
+            "shoot_projectile": None,
+        },
+        projectile_visuals={"description": "ground rupture projectile"},
+    )
+
+    apply_default_custom_projectile(
+        data,
+        "a hammer that sends a ground rupture forward and breaks weak blocks",
+        "Tier3_Hardmode",
+    )
+
+    assert data["mechanics"]["shot_style"] == "direct"
+    assert data["mechanics"]["custom_projectile"] is True
+    assert data["mechanics"]["shoot_projectile"] is None
+    assert data.get("mechanics_ir")
+
+
+def test_apply_default_custom_projectile_seeds_hollow_purple_basis() -> None:
+    data = _base_manifest(
+        item_name="VoidConvergenceStaff",
+        sub_type="Staff",
+        mechanics={"custom_projectile": None, "shoot_projectile": None},
+        projectile_visuals={
+            "description": "dense violet orb with black core",
+            "icon_size": [20, 20],
+        },
+    )
+
+    apply_default_custom_projectile(
+        data,
+        "a staff that shoots gojo's hollow purple from jjk",
+        "Tier3_Hardmode",
+    )
+
+    plan = data["spectacle_plan"]
+    assert "singularity orb" in plan["basis"]["projectile_body"]
+    assert "slow oppressive drift" in plan["basis"]["motion_grammar"]
+    assert "implosion" in plan["basis"]["payoff"]
+    assert "shock ring" in plan["basis"]["payoff"]
+    assert "radial terrain carve" in plan["basis"]["world_interaction"]
+    assert "starfall" in plan["must_not_include"]
+    assert "mark/cashout" in plan["must_not_include"]
+    assert "singularity" in plan["composition"]
+    assert str(data.get("projectile_visuals", {}).get("description", "")).strip()
+
+
+def test_apply_default_custom_projectile_enriches_partial_hollow_purple_plan() -> None:
+    data = _base_manifest(
+        item_name="HollowEventideStaff",
+        sub_type="Staff",
+        mechanics={"custom_projectile": True, "shoot_projectile": None},
+        projectile_visuals={
+            "description": "violet lance sphere",
+            "icon_size": [20, 20],
+        },
+        spectacle_plan={
+            "fantasy": "hollow purple annihilation shot",
+            "basis": {"projectile_body": ["lance-sphere"]},
+            "composition": "A purple lance-sphere fires from the staff.",
+        },
+    )
+
+    apply_default_custom_projectile(
+        data,
+        "a staff that shoots gojo's hollow purple from jjk",
+        "Tier3_Hardmode",
+    )
+
+    plan = data["spectacle_plan"]
+    assert "lance-sphere" in plan["basis"]["projectile_body"]
+    assert "singularity orb" in plan["basis"]["projectile_body"]
+    assert "radial terrain carve" in plan["basis"]["world_interaction"]
+    assert "starfall" in plan["must_not_include"]
+    assert "mark/cashout" in plan["must_not_include"]
+
+
+def test_apply_default_custom_projectile_seeds_tier3_package_spectacle_plan() -> None:
+    data = _base_manifest(
+        item_name="VoidConvergenceStaff",
+        sub_type="Staff",
+        mechanics={
+            "combat_package": "celestial_shock",
+            "custom_projectile": False,
+            "shoot_projectile": None,
+        },
+        projectile_visuals={
+            "description": "violet annihilation sphere",
+            "icon_size": [20, 20],
+        },
+    )
+
+    apply_default_custom_projectile(
+        data,
+        "a staff that shoots gojo's hollow purple from jjk",
+        "Tier3_Hardmode",
+    )
+
+    assert data["mechanics"]["combat_package"] == "celestial_shock"
+    assert data["mechanics"]["custom_projectile"] is False
+    plan = data["spectacle_plan"]
+    assert "singularity orb" in plan["basis"]["projectile_body"]
+    assert "radial terrain carve" in plan["basis"]["world_interaction"]
+    assert "celestial marks" in plan["must_not_include"]
+    assert "mark/cashout" in plan["must_not_include"]
+
+
+def test_hollow_purple_seeds_mechanics_ir_for_package_staff() -> None:
+    data = _base_manifest(
+        sub_type="Staff",
+        mechanics={
+            "combat_package": "storm_brand",
+            "custom_projectile": False,
+            "shoot_projectile": None,
+        },
+        projectile_visuals={
+            "description": "violet annihilation sphere",
+            "icon_size": [20, 20],
+        },
+    )
+
+    apply_default_custom_projectile(
+        data,
+        "a staff that shoots gojo's hollow purple from jjk",
+        "Tier3_Hardmode",
+    )
+
+    kinds = [atom["kind"] for atom in data["mechanics_ir"]["atoms"]]
+    assert "charge_phase" in kinds
+    assert "singularity_projectile" in kinds
+    assert "gravity_pull_field" in kinds
+    assert "implosion_payoff" in kinds
+    assert "bounded_terrain_carve" in kinds
+    assert "target_stack_cashout" in data["mechanics_ir"]["forbidden_atoms"]
+    assert "starfall_burst" in data["mechanics_ir"]["forbidden_atoms"]
+
+
+def test_weapon_prompt_requests_spectacle_plan_for_custom_projectiles() -> None:
+    assert "spectacle_plan" in weapon_prompt.SYSTEM_PROMPT
+    assert "mechanics_ir" in weapon_prompt.SYSTEM_PROMPT
+    assert "capability atoms" in weapon_prompt.SYSTEM_PROMPT
+    assert "not full weapon templates" in weapon_prompt.SYSTEM_PROMPT
+    assert "forbidden_atoms" in weapon_prompt.SYSTEM_PROMPT
+    assert "render_passes" in weapon_prompt.SYSTEM_PROMPT
+    assert "must_not_feel_like" in weapon_prompt.SYSTEM_PROMPT
+    assert "basis" in weapon_prompt.SYSTEM_PROMPT
+    assert "composition" in weapon_prompt.SYSTEM_PROMPT
+    assert "world_interaction" in weapon_prompt.SYSTEM_PROMPT
+    assert "must_not_include" in weapon_prompt.SYSTEM_PROMPT
+
+
+def test_weapon_prompt_requests_expanded_basis_axes() -> None:
+    prompt = weapon_prompt.SYSTEM_PROMPT
+
+    assert "cast_shape" in prompt
+    assert "carrier" in prompt
+    assert "motion" in prompt
+    assert "field_control" in prompt
+    assert "payoff" in prompt
+    assert "world_interaction" in prompt
+    assert "combo_logic" in prompt
+    assert "visual_grammar" in prompt
+    assert "not complete weapon archetypes" in prompt
+
+
 def test_combat_package_manifest_allows_null_shoot_projectile_after_lowering() -> None:
     manifest = ItemManifest.model_validate(
         _base_manifest(
@@ -697,7 +1114,7 @@ class WeaponPromptContractTests(unittest.TestCase):
             (
                 "ProjectileID.*",
                 "legacy projectile path",
-                "explicit vanilla homage weapons",
+                "explicit vanilla homage",
             ),
         )
 

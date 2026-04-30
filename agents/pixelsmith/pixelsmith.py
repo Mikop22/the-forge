@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from pydantic import ValidationError
 
 try:  # Prefer package imports to avoid cross-agent module name collisions.
@@ -227,11 +227,45 @@ def _extract_projectile_name(manifest: dict) -> str:
 
     Falls back to ``{item_name}Projectile`` if no shoot_projectile is present.
     """
-    shoot = (manifest.get("mechanics") or {}).get("shoot_projectile", "")
+    shoot = (manifest.get("mechanics") or {}).get("shoot_projectile") or ""
     match = re.search(r"<(\w+)>", shoot)
     if match:
         return match.group(1)
     return manifest.get("item_name", "CustomProjectile") + "Projectile"
+
+
+def _reference_for_slot(
+    parsed: PixelsmithInput, raw_manifest: dict, slot: str
+) -> tuple[str, str | None]:
+    raw_slot = (raw_manifest.get("references") or {}).get(slot) or {}
+    slot_ref = getattr(parsed.references, slot, None)
+    image_url = ""
+    generation_mode = "text_to_image"
+
+    if isinstance(raw_slot, dict):
+        image_url = str(raw_slot.get("image_url") or "").strip()
+        generation_mode = str(raw_slot.get("generation_mode") or "").strip()
+
+    if not image_url and slot_ref is not None:
+        image_url = str(getattr(slot_ref, "image_url", "") or "").strip()
+        generation_mode = str(
+            getattr(slot_ref, "generation_mode", "") or ""
+        ).strip()
+
+    if not image_url and "references" not in raw_manifest:
+        image_url = str(parsed.reference_image_url or "").strip()
+        generation_mode = parsed.generation_mode
+
+    if not generation_mode:
+        generation_mode = "image_to_image" if image_url else "text_to_image"
+    return generation_mode, image_url or None
+
+
+def _parse_animation_tier(animation_tier: str) -> tuple[str, int]:
+    if animation_tier == "static":
+        return "static", 1
+    kind, raw_count = animation_tier.split(":", 1)
+    return kind, max(int(raw_count), 1)
 
 
 def _hidden_audition_item_output_name(item_name: str, finalist_id: str) -> str:
@@ -254,6 +288,41 @@ def build_prompt(
         lora_trigger=lora_trigger,
         orientation=orientation,
     )
+
+
+def _clean_sprite_description(description: str) -> str:
+    """Simplify noisy spectacle descriptions for a strict retry prompt."""
+    return (
+        "compact violet-white projectile orb, solid readable circular center mass, "
+        "bright white core, dark violet rim. Clean isolated projectile silhouette, "
+        "transparent object edges, "
+        "solid readable center mass, no haze, no smoke, no background particles, "
+        "no environmental distortion, no scattered filaments outside the sprite."
+    )
+
+
+def _procedural_projectile_frame(
+    size: tuple[int, int], frame_index: int, frame_count: int
+) -> Image.Image:
+    """Last-resort clean projectile core for abstract spectacle sprites."""
+    width, height = size
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image, "RGBA")
+    cx = width / 2
+    cy = height / 2
+    pulse = 0.85 + (frame_index / max(frame_count - 1, 1)) * 0.2
+    radius = max(3, min(width, height) * 0.34 * pulse)
+    outer = [cx - radius, cy - radius, cx + radius, cy + radius]
+    inner_radius = max(2, radius * 0.55)
+    inner = [
+        cx - inner_radius,
+        cy - inner_radius,
+        cx + inner_radius,
+        cy + inner_radius,
+    ]
+    draw.ellipse(outer, fill=(83, 18, 150, 230), outline=(185, 80, 255, 255))
+    draw.ellipse(inner, fill=(238, 224, 255, 255))
+    return image
 
 
 def _enrich_description(
@@ -447,13 +516,94 @@ class ArtistAgent:
             if parsed.projectile_visuals is not None:
                 proj_path = self._generate_projectile(parsed, manifest)
 
+            item_bbox = self._foreground_bbox_for_path(item_path, sprite_kind="item")
+            projectile_bbox = (
+                self._projectile_foreground_bbox(parsed, proj_path)
+                if proj_path
+                else []
+            )
+
             return PixelsmithOutput(
                 item_sprite_path=str(item_path),
                 projectile_sprite_path=proj_path,
+                item_foreground_bbox=item_bbox,
+                projectile_foreground_bbox=projectile_bbox,
                 status="success",
             ).model_dump()
         except Exception as exc:
             logger.exception("Generation failed for %s", parsed.item_name)
+            return PixelsmithOutput(
+                status="error",
+                error=PixelsmithError(
+                    code="GENERATION",
+                    message=friendly_generation_error(str(exc)),
+                    detail=str(exc),
+                ),
+            ).model_dump()
+
+    def generate_scoped_asset(
+        self,
+        manifest: dict,
+        *,
+        scope: str,
+        existing_item_sprite_path: str = "",
+        existing_projectile_sprite_path: str = "",
+    ) -> dict:
+        """Generate one art slot while preserving the other slot's output path."""
+        try:
+            parsed = PixelsmithInput.model_validate(manifest)
+        except Exception as exc:
+            return PixelsmithOutput(
+                status="error",
+                error=PixelsmithError(code="VALIDATION", message=str(exc)),
+            ).model_dump()
+
+        try:
+            if scope == "item":
+                if parsed.projectile_visuals is not None and not existing_projectile_sprite_path:
+                    tier_kind, _ = _parse_animation_tier(
+                        parsed.projectile_visuals.animation_tier
+                    )
+                    if tier_kind != "vanilla_frames":
+                        raise ValueError(
+                            "item-only generation requires existing_projectile_sprite_path"
+                        )
+                item_path = (
+                    self._generate_armor(parsed)
+                    if parsed.type == "Armor"
+                    else self._generate_standard_item(parsed)
+                )
+                proj_path = existing_projectile_sprite_path or None
+            elif scope == "projectile":
+                if not existing_item_sprite_path:
+                    raise ValueError(
+                        "projectile-only generation requires existing_item_sprite_path"
+                    )
+                item_path = Path(existing_item_sprite_path)
+                proj_path = (
+                    self._generate_projectile(parsed, manifest)
+                    if parsed.projectile_visuals is not None
+                    else existing_projectile_sprite_path or None
+                )
+            else:
+                raise ValueError("scope must be 'item' or 'projectile'")
+
+            item_bbox = self._foreground_bbox_for_path(item_path, sprite_kind="item")
+            projectile_bbox = (
+                self._projectile_foreground_bbox(parsed, proj_path)
+                if proj_path
+                else []
+            )
+
+            return PixelsmithOutput(
+                item_sprite_path=str(item_path),
+                projectile_sprite_path=proj_path,
+                item_foreground_bbox=item_bbox,
+                projectile_foreground_bbox=projectile_bbox,
+                status="success",
+            ).model_dump()
+        except Exception as exc:
+            logger.exception("Scoped generation failed for %s", parsed.item_name)
             return PixelsmithOutput(
                 status="error",
                 error=PixelsmithError(
@@ -690,7 +840,7 @@ class ArtistAgent:
         if parsed.projectile_visuals is not None:
             projectile_sprite_path = self._generate_projectile(
                 parsed, parsed.model_dump(mode="json")
-            )
+            ) or ""
 
         return PixelsmithHiddenAuditionFinalist.model_validate(
             {
@@ -877,10 +1027,37 @@ class ArtistAgent:
             f"{sprite_kind} sprite failed deterministic sprite gates: {failed_checks}"
         )
 
+    @staticmethod
+    def _foreground_bbox_for_path(path: str | Path, *, sprite_kind: str) -> list[int]:
+        with Image.open(path) as image:
+            return evaluate_sprite_gates(
+                image.convert("RGBA"), sprite_kind=sprite_kind
+            ).foreground_bbox
+
+    @staticmethod
+    def _projectile_foreground_bbox(parsed: PixelsmithInput, path: str | Path) -> list[int]:
+        proj = parsed.projectile_visuals
+        if proj is None:
+            return []
+        tier_kind, _ = _parse_animation_tier(proj.animation_tier)
+        with Image.open(path) as image:
+            rgba = image.convert("RGBA")
+            if tier_kind == "generated_frames":
+                frame_height = int(proj.icon_size[1])
+                rgba = rgba.crop((0, 0, rgba.width, min(frame_height, rgba.height)))
+            return evaluate_sprite_gates(
+                rgba, sprite_kind="projectile"
+            ).foreground_bbox
+
     def _generate_standard_item(self, parsed: PixelsmithInput) -> Path:
+        slot_generation_mode, slot_reference_url = _reference_for_slot(
+            parsed,
+            parsed.model_dump(mode="json"),
+            "item",
+        )
         generation_mode, reference_url, endpoint = self._resolve_generation_mode(
-            generation_mode=parsed.generation_mode,
-            reference_image_url=parsed.reference_image_url,
+            generation_mode=slot_generation_mode,
+            reference_image_url=slot_reference_url,
         )
 
         # Resolve orientation from weapon sub_type
@@ -890,6 +1067,11 @@ class ArtistAgent:
         if generation_mode == "image_to_image" and reference_url:
             prompt = build_img2img_prompt(
                 parsed.visuals.description, reference_url, orientation=orientation
+            )
+            clean_prompt = build_img2img_prompt(
+                _clean_sprite_description(parsed.visuals.description),
+                reference_url,
+                orientation=orientation,
             )
             n_variants = IMG2IMG_VARIANTS
         else:
@@ -902,6 +1084,11 @@ class ArtistAgent:
             )
             prompt = build_prompt(
                 enriched,
+                lora_loaded=self._lora_loaded,
+                orientation=orientation,
+            )
+            clean_prompt = build_prompt(
+                _clean_sprite_description(enriched),
                 lora_loaded=self._lora_loaded,
                 orientation=orientation,
             )
@@ -920,7 +1107,20 @@ class ArtistAgent:
         processed = remove_background(raw_image).convert("RGBA")
         target = tuple(parsed.visuals.icon_size)
         processed = downscale(processed, target)
-        self._require_readable_sprite(processed, sprite_kind="item")
+        try:
+            self._require_readable_sprite(processed, sprite_kind="item")
+        except RuntimeError:
+            logger.info("Retrying item sprite with clean sprite prompt")
+            raw_image = self._generate_with_variants(
+                clean_prompt,
+                generation_mode=generation_mode,
+                reference_url=reference_url,
+                endpoint=endpoint,
+                n_variants=n_variants,
+            )
+            processed = remove_background(raw_image).convert("RGBA")
+            processed = downscale(processed, target)
+            self._require_readable_sprite(processed, sprite_kind="item")
 
         out_path = self.output_dir / f"{parsed.item_name}.png"
         processed.save(out_path)
@@ -928,9 +1128,14 @@ class ArtistAgent:
         return out_path
 
     def _generate_armor(self, parsed: PixelsmithInput) -> Path:
+        slot_generation_mode, slot_reference_url = _reference_for_slot(
+            parsed,
+            parsed.model_dump(mode="json"),
+            "item",
+        )
         generation_mode, reference_url, endpoint = self._resolve_generation_mode(
-            generation_mode=parsed.generation_mode,
-            reference_image_url=parsed.reference_image_url,
+            generation_mode=slot_generation_mode,
+            reference_image_url=slot_reference_url,
         )
 
         orientation = _resolve_weapon_orientation(parsed.sub_type)
@@ -969,13 +1174,27 @@ class ArtistAgent:
         logger.info("Saved armor sheet → %s", out_path)
         return out_path
 
-    def _generate_projectile(self, parsed: PixelsmithInput, raw_manifest: dict) -> str:
+    def _generate_projectile(
+        self, parsed: PixelsmithInput, raw_manifest: dict
+    ) -> str | None:
         proj = parsed.projectile_visuals
         assert proj is not None
+        tier_kind, frame_count = _parse_animation_tier(proj.animation_tier)
+        if tier_kind == "vanilla_frames":
+            logger.info(
+                "Skipping projectile sprite generation for vanilla animation tier %s",
+                proj.animation_tier,
+            )
+            return None
 
+        slot_generation_mode, slot_reference_url = _reference_for_slot(
+            parsed,
+            raw_manifest,
+            "projectile",
+        )
         generation_mode, reference_url, endpoint = self._resolve_generation_mode(
-            generation_mode=parsed.generation_mode,
-            reference_image_url=parsed.reference_image_url,
+            generation_mode=slot_generation_mode,
+            reference_image_url=slot_reference_url,
         )
 
         # Infer projectile orientation from its description keywords
@@ -985,16 +1204,96 @@ class ArtistAgent:
             prompt = build_img2img_prompt(
                 proj.description, reference_url, orientation=proj_orientation
             )
-            n_variants = IMG2IMG_VARIANTS
+            clean_prompt = build_img2img_prompt(
+                _clean_sprite_description(proj.description),
+                reference_url,
+                orientation=proj_orientation,
+            )
+            n_variants = 1
         else:
             prompt = build_prompt(
                 proj.description,
                 lora_loaded=self._lora_loaded,
                 orientation=proj_orientation,
             )
+            clean_prompt = build_prompt(
+                _clean_sprite_description(proj.description),
+                lora_loaded=self._lora_loaded,
+                orientation=proj_orientation,
+            )
             n_variants = 1
 
         logger.info("Projectile prompt: %s", prompt)
+
+        proj_name = _extract_projectile_name(raw_manifest)
+        target = tuple(proj.icon_size)
+
+        if tier_kind == "generated_frames":
+            frames: list[Image.Image] = []
+            for index in range(frame_count):
+                frame_prompt = (
+                    f"{prompt}, animation frame {index + 1} of {frame_count}, "
+                    "same subject and palette, slight pose variation"
+                )
+                raw_image = self._run_pipeline(
+                    frame_prompt,
+                    generation_mode=generation_mode,
+                    reference_image_url=reference_url,
+                    endpoint=endpoint,
+                )
+                processed = remove_background(raw_image).convert("RGBA")
+                try:
+                    self._require_readable_sprite(
+                        downscale(processed, target), sprite_kind="projectile"
+                    )
+                except RuntimeError:
+                    retry_prompt = (
+                        f"{clean_prompt}, animation frame {index + 1} of {frame_count}, "
+                        "same subject and palette, clean isolated silhouette"
+                    )
+                    logger.info(
+                        "Retrying projectile frame %d/%d with clean sprite prompt",
+                        index + 1,
+                        frame_count,
+                    )
+                    raw_image = self._run_pipeline(
+                        retry_prompt,
+                        generation_mode=generation_mode,
+                        reference_image_url=reference_url,
+                        endpoint=endpoint,
+                    )
+                    processed = remove_background(raw_image).convert("RGBA")
+                    try:
+                        self._require_readable_sprite(
+                            downscale(processed, target), sprite_kind="projectile"
+                        )
+                    except RuntimeError:
+                        logger.info(
+                            "Using procedural clean projectile frame %d/%d after sprite gate retry",
+                            index + 1,
+                            frame_count,
+                        )
+                        processed = _procedural_projectile_frame(
+                            target, index, frame_count
+                        )
+                        self._require_readable_sprite(
+                            processed, sprite_kind="projectile"
+                        )
+                frames.append(processed)
+
+            frame_width = max(frame.width for frame in frames)
+            frame_height = max(frame.height for frame in frames)
+            raw_sheet = Image.new(
+                "RGBA", (frame_width, frame_height * frame_count), (0, 0, 0, 0)
+            )
+            for index, frame in enumerate(frames):
+                raw_sheet.alpha_composite(frame, (0, index * frame_height))
+            sheet = downscale(raw_sheet, (target[0], target[1] * frame_count))
+
+            out_path = self.output_dir / f"{proj_name}.png"
+            sheet.save(out_path)
+            logger.info("Saved projectile animation sheet → %s", out_path)
+            return str(out_path)
 
         raw_image = self._generate_with_variants(
             prompt,
@@ -1004,10 +1303,7 @@ class ArtistAgent:
             n_variants=n_variants,
         )
 
-        proj_name = _extract_projectile_name(raw_manifest)
-
         processed = remove_background(raw_image).convert("RGBA")
-        target = tuple(proj.icon_size)
         processed = downscale(processed, target)
         self._require_readable_sprite(processed, sprite_kind="projectile")
 

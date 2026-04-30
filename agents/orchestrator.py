@@ -17,6 +17,7 @@ import contextlib
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -55,6 +56,13 @@ from core.workshop_director import build_variants
 from core.workshop_session import WorkshopSessionStore
 from core.weapon_lab_archive import RuntimeGateRecord, WeaponLabArchive
 from core.weapon_lab_models import SearchBudget
+
+
+def _direct_prompt_for_architect(prompt: str, tier: str):
+    from architect.prompt_director import enhance_prompt
+
+    return enhance_prompt(prompt, tier=tier)
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -311,6 +319,10 @@ def _release_lock() -> None:
         pass
 
 
+def _process_stat_alive(stat: str) -> bool:
+    return not stat.strip().startswith("Z")
+
+
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -328,6 +340,16 @@ def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except OSError:
+        return False
+    try:
+        stat = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "stat="],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return True
+    if not _process_stat_alive(stat):
         return False
     return True
 
@@ -849,6 +871,10 @@ def _build_hidden_audition_finalists(
     crafting_station: str | None,
     thesis_count: int,
     finalist_count: int,
+    raw_prompt: str | None = None,
+    protected_reference_terms: list[str] | None = None,
+    reference_subject: str | None = None,
+    reference_slots: Any = None,
 ) -> list[dict[str, Any]]:
     """Expand architect thesis finalists into manifest finalists for judging."""
 
@@ -868,12 +894,22 @@ def _build_hidden_audition_finalists(
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
+            raw_prompt=raw_prompt,
+            protected_reference_terms=protected_reference_terms,
+            reference_subject=reference_subject,
+            reference_slots=reference_slots,
         )
         for finalist in finalist_bundle.finalists
     ]
 
 
 def _prepare_preview_manifest(request: dict[str, Any]) -> dict[str, Any] | None:
+    """Build the manifest for scoped (item- or projectile-only) runs.
+
+    Carries through reference and generation fields from *existing_manifest*; does not run
+    ReferencePolicy (retrieval/approval) — that happens only on Architect paths that call
+    ``_finalize_manifest_data`` (e.g. ``generate_manifest``).
+    """
     existing_manifest = request.get("existing_manifest")
     if not isinstance(existing_manifest, dict):
         return None
@@ -889,6 +925,44 @@ def _prepare_preview_manifest(request: dict[str, Any]) -> dict[str, Any] | None:
         )
         manifest["visuals"] = visuals
     return manifest
+
+
+def _request_generation_scope(request: dict[str, Any]) -> str:
+    if request.get("projectile_only") is True:
+        return "projectile"
+    if request.get("item_only") is True:
+        return "item"
+    raw_scope = str(request.get("generation_scope") or request.get("scope") or "all")
+    normalized = raw_scope.strip().lower().replace("-", "_")
+    aliases = {
+        "all": "all",
+        "full": "all",
+        "item": "item",
+        "item_only": "item",
+        "projectile": "projectile",
+        "projectile_only": "projectile",
+    }
+    if normalized not in aliases:
+        raise ValueError(
+            "generation_scope must be all, item_only, or projectile_only"
+        )
+    return aliases[normalized]
+
+
+def _existing_item_sprite_path(request: dict[str, Any]) -> str:
+    return str(
+        request.get("existing_item_sprite_path")
+        or request.get("item_sprite_path")
+        or ""
+    )
+
+
+def _existing_projectile_sprite_path(request: dict[str, Any]) -> str:
+    return str(
+        request.get("existing_projectile_sprite_path")
+        or request.get("projectile_sprite_path")
+        or ""
+    )
 
 
 def build_hidden_batch_recovery_plan(
@@ -1250,19 +1324,121 @@ async def run_hidden_audition_pipeline(
     raise RuntimeError("No hidden audition finalist passed the runtime gate")
 
 
+def _bbox_hitbox_size(bbox: Any) -> list[int]:
+    """Convert inclusive [x1, y1, x2, y2] bbox coordinates to width/height."""
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        return []
+    try:
+        x1, y1, x2, y2 = [int(value) for value in bbox]
+    except (TypeError, ValueError):
+        return []
+    width = max(x2 - x1 + 1, 1)
+    height = max(y2 - y1 + 1, 1)
+    return [width, height]
+
+
+def _sprite_foreground_bbox(path: Any, *, sprite_kind: str) -> list[int]:
+    if not path:
+        return []
+    image_path = Path(str(path))
+    if not image_path.exists():
+        return []
+    try:
+        from PIL import Image
+        try:
+            from pixelsmith.sprite_gates import evaluate_sprite_gates
+        except ImportError:
+            from sprite_gates import evaluate_sprite_gates
+
+        with Image.open(image_path) as image:
+            return evaluate_sprite_gates(
+                image.convert("RGBA"), sprite_kind=sprite_kind
+            ).foreground_bbox
+    except Exception:
+        return []
+
+
+def _projectile_sprite_foreground_bbox(path: Any, manifest: dict[str, Any]) -> list[int]:
+    if not path:
+        return []
+    image_path = Path(str(path))
+    if not image_path.exists():
+        return []
+    projectile_visuals = manifest.get("projectile_visuals")
+    if not isinstance(projectile_visuals, dict):
+        return _sprite_foreground_bbox(path, sprite_kind="projectile")
+    animation_tier = str(projectile_visuals.get("animation_tier") or "static")
+    icon_size = projectile_visuals.get("icon_size")
+    try:
+        frame_height = int(icon_size[1]) if isinstance(icon_size, list) else 0
+    except (IndexError, TypeError, ValueError):
+        frame_height = 0
+    try:
+        from PIL import Image
+        try:
+            from pixelsmith.sprite_gates import evaluate_sprite_gates
+        except ImportError:
+            from sprite_gates import evaluate_sprite_gates
+
+        with Image.open(image_path) as image:
+            rgba = image.convert("RGBA")
+            if animation_tier.startswith("generated_frames:") and frame_height > 0:
+                rgba = rgba.crop((0, 0, rgba.width, min(frame_height, rgba.height)))
+            return evaluate_sprite_gates(
+                rgba, sprite_kind="projectile"
+            ).foreground_bbox
+    except Exception:
+        return []
+
+
+def _manifest_with_pixelsmith_bboxes(
+    manifest: dict[str, Any], art_result: dict[str, Any]
+) -> dict[str, Any]:
+    """Promote Pixelsmith foreground bboxes into manifest fields used by codegen."""
+    updated = dict(manifest)
+
+    item_bbox = art_result.get("item_foreground_bbox") or _sprite_foreground_bbox(
+        art_result.get("item_sprite_path"), sprite_kind="item"
+    )
+    if isinstance(item_bbox, list) and item_bbox:
+        visuals = dict(updated.get("visuals") or {})
+        visuals["foreground_bbox"] = item_bbox
+        updated["visuals"] = visuals
+
+    projectile_bbox = art_result.get(
+        "projectile_foreground_bbox"
+    ) or _projectile_sprite_foreground_bbox(
+        art_result.get("projectile_sprite_path"), updated
+    )
+    if isinstance(projectile_bbox, list) and projectile_bbox:
+        projectile_visuals = dict(updated.get("projectile_visuals") or {})
+        projectile_visuals["foreground_bbox"] = projectile_bbox
+        hitbox_size = _bbox_hitbox_size(projectile_bbox)
+        if hitbox_size:
+            projectile_visuals["hitbox_size"] = hitbox_size
+        updated["projectile_visuals"] = projectile_visuals
+
+    return updated
+
+
 async def run_pipeline(request: dict[str, Any]) -> None:
     """Execute the full Architect → (Coder ∥ Artist) → Integrator DAG."""
-
-    ArchitectAgent, CoderAgent, ArtistAgent, Integrator = _import_agents()
 
     prompt: str = request.get("prompt", "")
     tier: str = request.get("tier", "Tier1_Starter")
     crafting_station: str | None = request.get("crafting_station")
     content_type: str = _request_content_type_inferred(request)
     sub_type: str = _request_sub_type(request)
+    generation_scope = _request_generation_scope(request)
 
-    if not prompt:
+    if not prompt and generation_scope == "all":
         raise ValueError("Request payload missing 'prompt' field.")
+
+    scoped_manifest = _prepare_preview_manifest(request) if generation_scope != "all" else None
+    if generation_scope != "all" and scoped_manifest is None:
+        raise ValueError("Scoped generation requires existing_manifest")
+
+    ArchitectAgent, CoderAgent, ArtistAgent, Integrator = _import_agents()
 
     # --- Step A: signal the TUI ----------------------------------------
     _set_stage("Kindling the Forge...", 5)
@@ -1270,23 +1446,42 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     # --- Step B: Architect (sequential) --------------------------------
     log.info("▸ Architect — generating manifest for: %s", prompt[:80])
     _set_stage("Architect — Designing item...", 15)
-    architect = ArchitectAgent()
     art_result: dict[str, Any] | None = None
-    if _request_uses_hidden_audition(request):
+    if scoped_manifest is not None:
+        manifest = scoped_manifest
+        # Reference resolution (ReferencePolicy: BrowserReferenceFinder + HybridReferenceApprover)
+        # runs in ArchitectAgent._finalize_manifest_data on full generate_manifest / hidden-thesis
+        # paths. Scoped regen reuses existing_manifest (deep-copied in _prepare_preview_manifest)
+        # so reference_image_url, generation_mode, and visuals stay consistent with the saved
+        # manifest; Pixelsmith still applies img2img when those fields are present.
+        log.info(
+            "▸ Reusing existing manifest for %s-only generation: %s",
+            generation_scope,
+            manifest.get("item_name", "unknown"),
+        )
+    elif generation_scope != "all":
+        raise ValueError("Scoped generation requires existing_manifest")
+    elif _request_uses_hidden_audition(request):
+        director_result = _direct_prompt_for_architect(prompt, tier)
+        architect = ArchitectAgent()
         artist = ArtistAgent(output_dir=str(OUTPUT_DIR))
         finalists = _build_hidden_audition_finalists(
             architect=architect,
-            prompt=prompt,
+            prompt=director_result.enhanced_prompt,
             tier=tier,
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
             thesis_count=int(request.get("thesis_count", 3)),
             finalist_count=int(request.get("finalist_count", 2)),
+            raw_prompt=director_result.raw_prompt,
+            protected_reference_terms=director_result.protected_reference_terms,
+            reference_subject=director_result.reference_subject,
+            reference_slots=director_result.reference_slots,
         )
         hidden_result = await run_hidden_audition_pipeline(
             finalists=finalists,
-            prompt=prompt,
+            prompt=director_result.enhanced_prompt,
             output_dir=OUTPUT_DIR,
             artist=artist,
         )
@@ -1299,18 +1494,24 @@ async def run_pipeline(request: dict[str, Any]) -> None:
             ),
         }
     else:
+        director_result = _direct_prompt_for_architect(prompt, tier)
+        architect = ArchitectAgent()
         manifest = architect.generate_manifest(
-            prompt=prompt,
+            prompt=director_result.enhanced_prompt,
             tier=tier,
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
+            raw_prompt=director_result.raw_prompt,
+            protected_reference_terms=director_result.protected_reference_terms,
+            reference_subject=director_result.reference_subject,
+            reference_slots=director_result.reference_slots,
         )
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)
 
-    # --- Step C: Coder ∥ Artist (parallel) -----------------------------
-    log.info("▸ Starting parallel production — Coder + Artist")
+    # --- Step C: Artist → Coder ----------------------------------------
+    log.info("▸ Starting production — Artist then Coder")
     _set_stage("Smithing code and art...", 40)
 
     loop = asyncio.get_running_loop()
@@ -1318,19 +1519,20 @@ async def run_pipeline(request: dict[str, Any]) -> None:
     coder = CoderAgent()
     if art_result is None:
         artist = ArtistAgent(output_dir=str(OUTPUT_DIR))
-        coder_future = loop.run_in_executor(None, coder.write_code, manifest)
-        artist_future = loop.run_in_executor(None, artist.generate_asset, manifest)
-        code_result, art_result = await asyncio.gather(coder_future, artist_future)
-    else:
-        code_result = await loop.run_in_executor(None, coder.write_code, manifest)
-
-    # Validate Coder output
-    if code_result.get("status") != "success":
-        err = code_result.get("error", {})
-        raise RuntimeError(
-            f"CoderAgent failed [{err.get('code', '?')}]: {err.get('message', 'unknown')}"
-        )
-    log.info("✓ Coder complete")
+        if generation_scope == "all":
+            art_result = await loop.run_in_executor(None, artist.generate_asset, manifest)
+        else:
+            art_result = await loop.run_in_executor(
+                None,
+                lambda: artist.generate_scoped_asset(
+                    manifest,
+                    scope=generation_scope,
+                    existing_item_sprite_path=_existing_item_sprite_path(request),
+                    existing_projectile_sprite_path=_existing_projectile_sprite_path(
+                        request
+                    ),
+                ),
+            )
 
     # Validate Artist output
     if art_result.get("status") != "success":
@@ -1340,6 +1542,17 @@ async def run_pipeline(request: dict[str, Any]) -> None:
         )
     log.info("✓ Artist complete")
 
+    manifest = _manifest_with_pixelsmith_bboxes(manifest, art_result)
+    code_result = await loop.run_in_executor(None, coder.write_code, manifest)
+
+    # Validate Coder output
+    if code_result.get("status") != "success":
+        err = code_result.get("error", {})
+        raise RuntimeError(
+            f"CoderAgent failed [{err.get('code', '?')}]: {err.get('message', 'unknown')}"
+        )
+    log.info("✓ Coder complete")
+
     # --- Step D: Gatekeeper (sequential) --------------------------------
     log.info("▸ Gatekeeper — staging & verifying build")
     _set_stage("Gatekeeper — Compiling mod...", 80)
@@ -1348,6 +1561,7 @@ async def run_pipeline(request: dict[str, Any]) -> None:
         forge_output=code_result,
         sprite_path=art_result.get("item_sprite_path"),
         projectile_sprite_path=art_result.get("projectile_sprite_path"),
+        manifest=manifest,
     )
 
     if gate_result.get("status") != "success":
@@ -1402,13 +1616,18 @@ async def run_instant_pipeline(request: dict[str, Any]) -> None:
     else:
         log.info("▸ Architect — generating manifest for: %s", prompt[:80])
         _set_stage("Architect — Designing item...", 15)
+        director_result = _direct_prompt_for_architect(prompt, tier)
         architect = ArchitectAgent()
         manifest = architect.generate_manifest(
-            prompt=prompt,
+            prompt=director_result.enhanced_prompt,
             tier=tier,
             content_type=content_type,
             sub_type=sub_type,
             crafting_station=crafting_station,
+            raw_prompt=director_result.raw_prompt,
+            protected_reference_terms=director_result.protected_reference_terms,
+            reference_subject=director_result.reference_subject,
+            reference_slots=director_result.reference_slots,
         )
     item_name: str = manifest["item_name"]
     log.info("✓ Architect complete — item: %s", item_name)

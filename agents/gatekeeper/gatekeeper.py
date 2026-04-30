@@ -68,8 +68,17 @@ _MSG_TML003 = (
     "tModLoader and reload mods, or close tModLoader completely, then build again."
 )
 
-# Regex: class FooBar : ModItem
-_ITEM_NAME_RE = re.compile(r"class\s+(\w+)\s*:\s*ModItem\b")
+# Regexes: class FooBar : ModItem / ModProjectile. Generated code usually imports
+# Terraria.ModLoader, but tests and repairs can use fully qualified base names.
+_ITEM_NAME_RE = re.compile(
+    r"class\s+(\w+)\s*:\s*(?:[\w.]+\.)?ModItem\b"
+)
+_PROJECTILE_NAME_RE = re.compile(
+    r"class\s+(\w+)\s*:\s*(?:[\w.]+\.)?ModProjectile\b"
+)
+_VANILLA_TEXTURE_RE = re.compile(
+    r"override\s+string\s+Texture\b[\s\S]*?\"Terraria/Images/"
+)
 
 
 _DEFAULT_BUILD_TXT = """\
@@ -110,6 +119,50 @@ def tmod_enabled_json_path() -> Path:
     return default_mod_sources_dir().parent / "Mods" / "enabled.json"
 
 
+def _hjson_block_end(s: str, open_brace_idx: int) -> int | None:
+    """*open_brace_idx* points at ``{``; return index one past the matching
+    ``}``, respecting double-quoted strings so ``}`` inside tooltips is ignored.
+    """
+    if open_brace_idx < 0 or open_brace_idx >= len(s) or s[open_brace_idx] != "{":
+        return None
+    depth = 0
+    i = open_brace_idx
+    in_str = False
+    esc = False
+    while i < len(s):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+        i += 1
+    return None
+
+
+def _extract_item_hjson_block(text: str, item_name: str) -> str | None:
+    """Return the substring ``Name: { ... }`` for one mod item, or *None*."""
+    head = re.search(rf"({re.escape(item_name)}:\s*{{)", text)
+    if not head:
+        return None
+    open_idx = head.end() - 1
+    end = _hjson_block_end(text, open_idx)
+    if end is None:
+        return None
+    return text[head.start() : end]
+
+
 @dataclass
 class CompileResult:
     """Result of a tModLoader build attempt."""
@@ -142,6 +195,7 @@ class Integrator:
         forge_output: dict,
         sprite_path: str | None = None,
         projectile_sprite_path: str | None = None,
+        manifest: dict | None = None,
     ) -> dict:
         """Main entry point. Stage files, build, self-heal, return result."""
         if forge_output.get("status") == "error":
@@ -164,9 +218,33 @@ class Integrator:
                 error_message="Could not extract ModItem class name from C# source.",
             ).model_dump()
 
+        preflight_errors = self._manifest_contract_errors(manifest, cs_code)
+        if preflight_errors:
+            message = "Generated code failed manifest contract preflight: " + "; ".join(
+                preflight_errors
+            )
+            self._write_status(
+                {
+                    "status": "error",
+                    "error_code": "MANIFEST_CONTRACT",
+                    "message": message,
+                }
+            )
+            return GatekeeperResult(
+                status="error",
+                item_name=item_name,
+                attempts=0,
+                error_message=message,
+            ).model_dump()
+
         self._write_status({"status": "building"})
         self._stage_files(
-            cs_code, hjson_code, item_name, sprite_path, projectile_sprite_path
+            cs_code,
+            hjson_code,
+            item_name,
+            sprite_path,
+            projectile_sprite_path,
+            manifest=manifest,
         )
 
         for attempt in range(1, self._max_retries + 2):
@@ -233,6 +311,7 @@ class Integrator:
             repair_result = self._coder.fix_code(
                 error_log=result.output,
                 original_code=cs_code,
+                manifest=manifest,
             )
 
             if repair_result.get("status") == "error":
@@ -257,8 +336,9 @@ class Integrator:
                 cs_code,
                 hjson_code,
                 item_name,
-                sprite_path=None,
-                projectile_sprite_path=None,
+                sprite_path=sprite_path,
+                projectile_sprite_path=projectile_sprite_path,
+                manifest=manifest,
             )
 
         # Should be unreachable, but guard against falling through.
@@ -268,6 +348,24 @@ class Integrator:
             attempts=self._max_retries + 1,
             error_message="Build loop exited unexpectedly.",
         ).model_dump()
+
+    @staticmethod
+    def _manifest_contract_errors(manifest: dict | None, cs_code: str) -> list[str]:
+        if not isinstance(manifest, dict) or not manifest:
+            return []
+        try:
+            from forge_master.forge_master import (
+                _critique_violations,
+                _validate_projectile_hitbox_contract,
+            )
+        except ImportError:
+            from forge_master import (  # type: ignore
+                _critique_violations,
+                _validate_projectile_hitbox_contract,
+            )
+        return _validate_projectile_hitbox_contract(manifest, cs_code) + _critique_violations(
+            manifest, cs_code
+        )
 
     @staticmethod
     def _parse_errors(output: str) -> list[RoslynError]:
@@ -339,6 +437,115 @@ class Integrator:
         return m.group(1) if m else None
 
     @staticmethod
+    def _extract_projectile_name(cs_code: str) -> str | None:
+        """Extract the first ModProjectile class name from C# source."""
+        m = _PROJECTILE_NAME_RE.search(cs_code)
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _class_body(cs_code: str, class_name: str) -> str:
+        """Return the text inside a class body using balanced braces."""
+        match = re.search(rf"class\s+{re.escape(class_name)}\b", cs_code)
+        if not match:
+            return ""
+
+        open_idx = cs_code.find("{", match.end())
+        if open_idx == -1:
+            return ""
+
+        depth = 0
+        for idx in range(open_idx, len(cs_code)):
+            char = cs_code[idx]
+            if char == "{":
+                depth += 1
+                continue
+            if char != "}":
+                continue
+            depth -= 1
+            if depth == 0:
+                return cs_code[open_idx + 1 : idx]
+        return ""
+
+    @classmethod
+    def _uses_vanilla_texture(cls, cs_code: str, class_name: str) -> bool:
+        """True when a generated class explicitly points Texture at Terraria assets."""
+        return bool(_VANILLA_TEXTURE_RE.search(cls._class_body(cs_code, class_name)))
+
+    @staticmethod
+    def _resolve_staging_hjson(
+        hjson_code: str,
+        manifest: dict | None,
+        item_name: str,
+        mod_folder_name: str,
+    ) -> str:
+        """Prefer manifest-driven localization so tooltip markup cannot break Hjson.
+
+        CoderAgent._generate_hjson JSON-encodes display/tooltip strings. LLM-merged
+        hjson (or _merge_hjson) can still corrupt when tooltips use raw newlines
+        or ``}`` inside unquoted Terraria color tags.
+        """
+        if not isinstance(manifest, dict):
+            return hjson_code
+        if "display_name" not in manifest and "tooltip" not in manifest:
+            return hjson_code
+        try:
+            from forge_master.forge_master import CoderAgent
+        except ImportError:  # pragma: no cover - alternate package layout
+            from forge_master import CoderAgent
+        display = str(manifest.get("display_name", item_name))
+        tooltip = str(manifest.get("tooltip", ""))
+        return CoderAgent._generate_hjson(
+            item_name=item_name,
+            display_name=display,
+            tooltip=tooltip,
+            mod_name=mod_folder_name,
+        )
+
+    @classmethod
+    def _inject_mod_projectile_texture(
+        cls,
+        cs_code: str,
+        projectile_name: str | None,
+        mod_name: str,
+        use_mod_projectile_png: bool,
+    ) -> str:
+        """Point ModProjectile at ``Content/Projectiles`` when the .cs file lives in ``Content/Items``.
+
+        tModLoader default texture resolution follows the *source* path; a ModProjectile
+        class nested in ``Content/Items/ItemName.cs`` otherwise looks for
+        ``.../Content/Items/ProjectileClass`` even when the .png is staged to
+        ``Content/Projectiles/ProjectileClass.png``.
+        """
+        if not projectile_name or not use_mod_projectile_png:
+            return cs_code
+        if cls._uses_vanilla_texture(cs_code, projectile_name):
+            return cs_code
+
+        right = f'"{mod_name}/Content/Projectiles/{projectile_name}"'
+        wrong_mod = f'"{mod_name}/Content/Items/{projectile_name}"'
+        if wrong_mod in cs_code:
+            return cs_code.replace(wrong_mod, right, 1)
+        if f'"Content/Items/{projectile_name}"' in cs_code:
+            return cs_code.replace(
+                f'"Content/Items/{projectile_name}"', right, 1
+            )
+
+        body = cls._class_body(cs_code, projectile_name)
+        if not body or re.search(r"override\s+string\s+Texture", body):
+            return cs_code
+
+        m = re.search(
+            rf"public\s+class\s+{re.escape(projectile_name)}\s*:\s*ModProjectile\s*{{",
+            cs_code,
+            re.DOTALL,
+        )
+        if not m:
+            return cs_code
+        insert_at = m.end()
+        line = f"\n\tpublic override string Texture => {right};\n"
+        return cs_code[:insert_at] + line + cs_code[insert_at:]
+
+    @staticmethod
     def _status_for_mod_sources_root(status_dict: dict) -> dict:
         """Map Gatekeeper status to the same keys the TUI expects at ModSources root."""
         raw = status_dict.get("status", "building")
@@ -390,25 +597,102 @@ class Integrator:
         item_name: str,
         sprite_path: str | None,
         projectile_sprite_path: str | None = None,
+        manifest: dict | None = None,
     ) -> None:
-        """Write CS and PNG to Content/Items/."""
+        """Write code and sprites to the ModSources paths tModLoader autoloads."""
+        item_sprite: Path | None = None
+        projectile_sprite: Path | None = None
+
+        if not sprite_path and not self._uses_vanilla_texture(cs_code, item_name):
+            raise ValueError(
+                f"item sprite path is required for generated item {item_name!r}"
+            )
+
+        if sprite_path:
+            item_sprite = Path(sprite_path)
+            if not item_sprite.exists():
+                raise FileNotFoundError(
+                    f"item sprite path does not exist: {item_sprite}"
+                )
+            if item_sprite.stem != item_name:
+                raise ValueError(
+                    "item sprite name mismatch: "
+                    f"asset {item_sprite.stem!r} does not match item_name {item_name!r}"
+                )
+
+        hjson_effective = self._resolve_staging_hjson(
+            hjson_code, manifest, item_name, self._mod_root.name
+        )
+
+        projectile_name = self._extract_projectile_name(cs_code)
+        if (
+            projectile_name
+            and not projectile_sprite_path
+            and not self._uses_vanilla_texture(cs_code, projectile_name)
+        ):
+            raise ValueError(
+                "projectile sprite path is required for generated projectile "
+                f"{projectile_name!r}"
+            )
+
+        if projectile_sprite_path:
+            projectile_sprite = Path(projectile_sprite_path)
+            if not projectile_sprite.exists():
+                raise FileNotFoundError(
+                    f"projectile sprite path does not exist: {projectile_sprite}"
+                )
+            if not projectile_name:
+                raise ValueError(
+                    "projectile sprite provided, but codegen emitted no ModProjectile class"
+                )
+            source_name = projectile_sprite.stem
+            if source_name != projectile_name:
+                raise ValueError(
+                    "projectile sprite name mismatch: "
+                    f"asset {source_name!r} does not match ModProjectile {projectile_name!r}"
+                )
+
+        cs_prepared = self._inject_mod_projectile_texture(
+            cs_code,
+            projectile_name,
+            self._mod_root.name,
+            use_mod_projectile_png=bool(projectile_sprite and projectile_name),
+        )
+
+        self._clear_generated_content_surface()
+
         items_dir = self._mod_root / "Content" / "Items"
         items_dir.mkdir(parents=True, exist_ok=True)
 
-        (items_dir / f"{item_name}.cs").write_text(cs_code, encoding="utf-8")
+        (items_dir / f"{item_name}.cs").write_text(cs_prepared, encoding="utf-8")
 
-        if sprite_path and Path(sprite_path).exists():
-            shutil.copy2(sprite_path, items_dir / f"{item_name}.png")
+        if item_sprite:
+            shutil.copy2(item_sprite, items_dir / f"{item_name}.png")
 
-        if projectile_sprite_path and Path(projectile_sprite_path).exists():
+        if projectile_sprite and projectile_name:
+            projectiles_dir = self._mod_root / "Content" / "Projectiles"
+            projectiles_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(
-                projectile_sprite_path, items_dir / Path(projectile_sprite_path).name
+                projectile_sprite, projectiles_dir / f"{projectile_name}.png"
             )
 
-        if hjson_code:
-            self._merge_hjson(hjson_code, item_name)
+        if hjson_effective:
+            self._merge_hjson(hjson_effective, item_name)
 
         self._ensure_build_files()
+
+    def _clear_generated_content_surface(self) -> None:
+        """Remove stale generated loadable content before staging the next forge.
+
+        tModLoader compiles every C# file under the ModSources folder. Leaving
+        previous generated weapons in place means a stale bad file can break the
+        current build, or make live testing exercise the wrong item behavior.
+        Build metadata and the mod entry class are intentionally preserved.
+        """
+        for rel in ("Content", "Localization"):
+            path = self._mod_root / rel
+            if path.exists():
+                shutil.rmtree(path)
 
     def _ensure_build_files(self) -> None:
         """Create build.txt, description.txt, and Mod entry class if missing."""
@@ -441,41 +725,30 @@ class Integrator:
 
         existing = hjson_path.read_text(encoding="utf-8")
 
-        # Extract the new item's inner block (ItemName: { ... })
-        new_item_re = re.compile(
-            rf"({re.escape(item_name)}:\s*\{{[^{{}}]*\}})", re.DOTALL
-        )
-        new_match = new_item_re.search(hjson_block)
-        if not new_match:
+        new_block = _extract_item_hjson_block(hjson_block, item_name)
+        if not new_block:
             hjson_path.write_text(hjson_block, encoding="utf-8")
             return
 
-        new_item_block = new_match.group(1)
+        old_sub = _extract_item_hjson_block(existing, item_name)
+        if old_sub is not None:
+            start = existing.find(old_sub)
+            if start >= 0:
+                updated = (
+                    existing[:start] + new_block + existing[start + len(old_sub) :]
+                )
+                hjson_path.write_text(updated, encoding="utf-8")
+                return
 
-        # Check if this item already exists
-        existing_match = new_item_re.search(existing)
-        if existing_match:
-            # Replace existing block
+        items_close = re.search(r"(\n\t\t\})", existing)
+        if items_close:
+            insert_pos = items_close.start()
             updated = (
-                existing[: existing_match.start()]
-                + new_item_block
-                + existing[existing_match.end() :]
+                existing[:insert_pos] + "\n\t\t\t" + new_block + existing[insert_pos:]
             )
             hjson_path.write_text(updated, encoding="utf-8")
         else:
-            # Insert before the closing of the Items block
-            items_close = re.search(r"(\n\t\t\})", existing)
-            if items_close:
-                insert_pos = items_close.start()
-                updated = (
-                    existing[:insert_pos]
-                    + "\n\t\t\t"
-                    + new_item_block
-                    + existing[insert_pos:]
-                )
-                hjson_path.write_text(updated, encoding="utf-8")
-            else:
-                hjson_path.write_text(hjson_block, encoding="utf-8")
+            hjson_path.write_text(hjson_block, encoding="utf-8")
 
     def _ensure_mod_enabled(self, mod_name: str) -> None:
         """Ensure mod_name appears in tModLoader's enabled.json."""
@@ -507,13 +780,15 @@ class Integrator:
         tmod_dir = self._tmod_dll.parent
         saved_dir = mod_sources_dir.parent  # e.g. .../tModLoader
 
+        self._remove_empty_tmodloader_shadow_source(tmod_dir / mod_name)
+
         wrapper = Path(__file__).resolve().parent / "tmod_build.sh"
 
         cmd = [
             str(wrapper),
             str(tmod_dir),
             "-build",
-            mod_name,
+            str(self._mod_root),
             "-tmlsavedirectory",
             str(saved_dir),
         ]
@@ -525,3 +800,18 @@ class Integrator:
         )
         output = proc.stdout + proc.stderr
         return CompileResult(success=proc.returncode == 0, output=output)
+
+    @staticmethod
+    def _remove_empty_tmodloader_shadow_source(path: Path) -> None:
+        """Remove empty install-dir source shadows so ``-build Name`` uses ModSources.
+
+        tModLoader is launched from its install directory for dependency resolution.
+        If an empty directory with the mod name exists there, it can be selected as
+        the source and produce an empty stub .tmod. Only empty directories are
+        removed; non-empty folders are left untouched.
+        """
+        try:
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+        except OSError:
+            pass
