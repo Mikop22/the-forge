@@ -29,12 +29,9 @@ except ImportError:
     from core.paths import mod_sources_root
 
 try:
-    from forge_master.compilation_harness import find_tmod_path
+    from core.compilation_harness import find_tmod_path
 except ImportError:
-    _fm_path = str(Path(__file__).resolve().parent.parent / "forge_master")
-    if _fm_path not in sys.path:
-        sys.path.insert(0, _fm_path)
-    from compilation_harness import find_tmod_path
+    from compilation_harness import find_tmod_path  # type: ignore
 
 # Regex: filename(line,col): error CSxxxx: message
 _ERROR_RE = re.compile(
