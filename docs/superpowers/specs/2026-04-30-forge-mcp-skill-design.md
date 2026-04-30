@@ -49,129 +49,128 @@ the-forge/
 
 ## Generation Flow
 
-MCP tools are only callable from the main Claude session — subagents return data, main Claude calls tools and passes results back.
+**Rules:** MCP tools are only callable from the main Claude session — subagents return data, main Claude calls tools. `generation_id` is created by main Claude as a timestamp slug (`YYYYMMDD_HHMMSS`) at pipeline start, before any tool calls. It is passed explicitly to every tool and subagent that needs it.
 
 ```
 User: "make a void pistol"
 
-Main Claude (reads forge.md)
+Main Claude
   │
-  ├─ Infers tier (Tier 3: forbidden-feel + custom projectile language)
-  │   → States inferred tier to user before continuing
+  ├─ Infers tier → states it to user
+  ├─ Creates generation_id = "20260430_214500"  ← timestamp slug, owned by main session
   │
-  ├─ Spawns Architect-Thesis subagent [Opus]
-  │   Input:  {prompt, tier, forbidden_patterns}
-  │   Output: {concepts: [{name, fantasy, spectacle_plan, basis_atoms}, ...]}  ← 3 concepts
-  │   → Main Claude presents concepts, user picks (or Claude picks if "you choose")
+  ├─ Spawns Architect-Thesis [Opus]
+  │   In:  {prompt, tier, forbidden_patterns}
+  │   Out: {concepts: [{name, fantasy, spectacle_plan, basis_atoms}] × 3}
+  │   → Present to user; wait for pick
   │
-  ├─ Spawns Architect-Manifest subagent [Sonnet]
-  │   Input:  {winning_concept, tier, manifest_schema}
-  │   Output: {manifest: <full manifest JSON>}
+  ├─ Spawns Architect-Manifest [Sonnet]
+  │   In:  {winning_concept, tier, manifest_schema, tier1_omit_fields}
+  │   Out: {manifest}   ← includes references.item.needed + references.projectile.needed
   │
-  ├─ COMPILE LOOP (global budget: 6 attempts across all reviewer loops)
-  │   │   Main Claude pipeline state: {manifest, cs_code, generation_id, global_attempts_used}
+  ├─ COMPILE LOOP  (global_attempts_used tracked by main session, max 6)
+  │   ├─ Spawns Coder [Sonnet]
+  │   │   In:  {manifest, compile_errors: [str], reviewer_issues: [str],
+  │   │          attempt_number, global_attempts_used}
+  │   │   Out: {cs_code}
   │   │
-  │   ├─ Spawns Coder subagent [Sonnet]
-  │   │   Input:  {manifest, compile_errors: [str], reviewer_issues: [str], attempt_number, global_attempts_used}
-  │   │   Output: {cs_code}   ← no hjson; tool derives it from manifest
+  │   ├─ Main calls forge_compile(cs_code, manifest, generation_id)
+  │   │   Out: {status, errors: [str], artifact_path}
+  │   │   → staging dir: agents/.forge_staging/<generation_id>/
+  │   │   → on error + budget remaining: re-spawn Coder with compile_errors
+  │   │   → on budget exhausted: surface to user
   │   │
-  │   ├─ Main Claude calls forge_compile(cs_code, manifest)
-  │   │   → Returns {status, errors, artifact_path, generation_id}
-  │   │   → Main Claude stores generation_id for forge_inject
-  │   │   → On error: if global_attempts_used < 6, spawn fresh Coder with compile_errors; else surface to user
-  │   │
-  │   ├─ Spawns Reviewer subagent [Sonnet]
-  │   │   Input:  {cs_code, manifest, critique_checklist}
-  │   │   Output: {approved: bool, issues: [str]}
-  │   │
-  │   └─ On reviewer fail: spawn fresh Coder with reviewer_issues (counts against global budget)
-  │      On reviewer approve: exit compile loop
+  │   ├─ Spawns Reviewer [Sonnet]
+  │   │   In:  {cs_code, manifest, critique_checklist}
+  │   │   Out: {approved: bool, issues: [str]}
+  │   │   → on fail + budget remaining: re-spawn Coder with reviewer_issues
+  │   │   → on approve: exit loop
   │
-  ├─ Spawns Reference-Finder subagent [Opus] × 2 (item + projectile, if manifest.references.*.needed)
-  │   Input:  {slot: "item"|"projectile", visual_description, weapon_fantasy, must_not_feel_like: [str]}
-  │   → Uses WebSearch + WebFetch to find the best reference image
-  │   → Selection criteria: clean isolated subject, matches silhouette/color intent, no busy backgrounds,
-  │       not a reskin of a common vanilla Terraria item, high enough resolution to inform pixel art
-  │   → Downloads image to agents/.forge_staging/<generation_id>/ref_<slot>.png
-  │   Output: {reference_path: str|null, reasoning: str}
-  │   → If manifest.references.*.needed is false, skip — forge_generate_sprite uses text-to-image mode
+  ├─ Reference-Finder [Opus] × 2  (only if manifest.references.<slot>.needed == true)
+  │   In:  {slot, visual_description, weapon_fantasy, must_not_feel_like, generation_id}
+  │   → WebSearch + WebFetch; downloads to agents/.forge_staging/<generation_id>/ref_<slot>.png
+  │   Out: {reference_path: str|null, reasoning}
+  │   → null if no suitable image found → text-to-image mode
   │
-  ├─ Main Claude calls forge_generate_sprite(description, size, animation_frames, kind, reference_path?) × 2
-  │   → item: description from manifest.visuals.description, size from manifest.visuals.icon_size
-  │   → projectile: description from manifest.projectile_visuals.description, size from manifest.projectile_visuals.icon_size
-  │   → animation_frames from manifest.projectile_visuals.animation_tier (e.g. "generated_frames:3" → 3)
-  │   → reference_path: from Reference-Finder output (null → text-to-image, path → img2img mode)
-  │   → Each call returns {status, candidate_paths: [3 paths]}
+  ├─ Main calls forge_generate_sprite(description, size, animation_frames, kind,
+  │                                    reference_path, generation_id) × 2
+  │   → item:  description=manifest.visuals.description,      size=manifest.visuals.icon_size
+  │   → proj:  description=manifest.projectile_visuals.description, size=manifest.projectile_visuals.icon_size,
+  │             animation_frames parsed from manifest.projectile_visuals.animation_tier
+  │   → Tool uploads reference_path to FAL storage before img2img call (via existing _upload_ref.mjs)
+  │   Out: {status, candidate_paths: [3 local paths]}
   │
-  ├─ Spawns Sprite-Judge subagent [Opus]
-  │   Input:  {item_candidates: [...paths], projectile_candidates: [...paths], weapon_description}
-  │   Output: {item_sprite: path, projectile_sprite: path, reasoning}
-  │   → Uses Read tool to view each image before judging
+  ├─ Spawns Sprite-Judge [Opus]
+  │   In:  {item_candidates: [path×3], projectile_candidates: [path×3], weapon_description}
+  │   → Uses Read tool to view each image
+  │   Out: {item_sprite: path, projectile_sprite: path, reasoning}
   │
-  ├─ Main Claude calls forge_status()
-  │   → If tModLoader not running: block inject, tell user
-  │   → If ForgeConnector offline: warn user, ask to confirm before continuing
+  ├─ Main calls forge_status()
+  │   → tModLoader not running → block inject, tell user
+  │   → ForgeConnector offline → warn, ask user to confirm
   │
-  └─ Main Claude calls forge_inject(item_name, cs_code, manifest, item_sprite_path, projectile_sprite_path, generation_id)
-       → generation_id locates the staging dir from forge_compile; rejects unknown tokens
-       → Atomically moves staged files into ForgeGeneratedMod
-       → Writes forge_inject.json (ForgeConnector watcher trigger)
-       → Returns {status, error_message, reload_required: true}
-       → User must reload mods in tModLoader; ForgeConnector fires on next poll post-reload
-       → Main Claude tells user: item name, crafting recipe, reload required, what to expect
+  └─ Main calls forge_inject(item_name, cs_code, manifest, item_sprite_path,
+                              projectile_sprite_path, generation_id)
+       → Atomically moves agents/.forge_staging/<generation_id>/ → ForgeGeneratedMod/Content/
+       → Re-derives hjson from manifest; writes forge_inject.json
+       → Deletes staging dir on success
+       Out: {status, error_message, reload_required: true}
+       → Tell user: item name, crafting recipe, "reload mods in tModLoader to spawn it"
 ```
 
 ## Stage Handoff Contracts
 
-Every stage boundary is an explicit JSON payload. Subagents receive these as part of their prompt.
+Canonical. Every section of this spec must match these exactly.
 
-| Boundary | Payload |
+| Stage boundary | Payload |
 |---|---|
-| → Architect-Thesis | `{prompt: str, tier: 1\|2\|3, forbidden_patterns: [str]}` |
-| Thesis → Main | `{concepts: [{name, fantasy, spectacle_plan, basis_atoms}] × 3}` |
-| → Architect-Manifest | `{winning_concept: {…}, tier: int, manifest_schema: {…}, tier1_omit_fields: [str]}` |
-| Manifest → Main | `{manifest: <full manifest JSON>}` |
-| → Coder | `{manifest: {…}, compile_errors: [str], reviewer_issues: [str], attempt_number: int, global_attempts_used: int}` — all error fields are `[]` on first call |
-| Coder → Main | `{cs_code: str}` — no hjson; forge_compile derives it from manifest |
-| forge_compile → Main | `{status, errors: [str], artifact_path: str, generation_id: str}` |
-| → Reviewer | `{cs_code: str, manifest: {…}, critique_checklist: [str]}` |
+| → Architect-Thesis | `{prompt, tier, forbidden_patterns: [str]}` |
+| Architect-Thesis → Main | `{concepts: [{name, fantasy, spectacle_plan, basis_atoms}] × 3}` |
+| → Architect-Manifest | `{winning_concept, tier, manifest_schema, tier1_omit_fields: [str]}` |
+| Architect-Manifest → Main | `{manifest}` — includes `references.item.needed`, `references.projectile.needed` |
+| → Coder | `{manifest, compile_errors: [str], reviewer_issues: [str], attempt_number, global_attempts_used}` |
+| Coder → Main | `{cs_code}` |
+| Main → forge_compile | `(cs_code, manifest, generation_id)` |
+| forge_compile → Main | `{status, errors: [str], artifact_path}` |
+| → Reviewer | `{cs_code, manifest, critique_checklist: [str]}` |
 | Reviewer → Main | `{approved: bool, issues: [str]}` |
-| → Sprite-Judge | `{item_candidates: [path], projectile_candidates: [path], weapon_description: str}` |
-| Judge → Main | `{item_sprite: path, projectile_sprite: path, reasoning: str}` |
-| → Reference-Finder | `{slot: "item"\|"projectile", visual_description: str, weapon_fantasy: str, must_not_feel_like: [str], generation_id: str}` |
-| Reference-Finder → Main | `{reference_path: str\|null, reasoning: str}` |
+| → Reference-Finder | `{slot: "item"\|"projectile", visual_description, weapon_fantasy, must_not_feel_like: [str], generation_id}` |
+| Reference-Finder → Main | `{reference_path: str\|null, reasoning}` |
+| Main → forge_generate_sprite | `(description, size: [int,int], animation_frames: int, kind, reference_path: str\|null, generation_id)` |
+| forge_generate_sprite → Main | `{status, candidate_paths: [str × 3]}` |
+| → Sprite-Judge | `{item_candidates: [str × 3], projectile_candidates: [str × 3], weapon_description}` |
+| Sprite-Judge → Main | `{item_sprite: str, projectile_sprite: str, reasoning}` |
+| Main → forge_inject | `(item_name, cs_code, manifest, item_sprite_path, projectile_sprite_path, generation_id)` |
+| forge_inject → Main | `{status, error_message, reload_required: true}` |
 
 ---
 
 ## MCP Tools (`agents/mcp_server.py`)
 
-Four tools. All thin — no reasoning, no LLM calls.
+Four tools. All thin — no reasoning, no LLM calls. Signatures are canonical and match the Stage Handoff Contracts table exactly.
 
-### `forge_compile(cs_code, manifest)`
-- Canonical signature: `cs_code: str`, `manifest: dict` — no hjson parameter anywhere
-- Derives hjson deterministically from manifest fields (item_name, display_name, tooltip) inside the tool — this is the only place hjson is ever generated
-- Writes to a per-generation staging directory at `agents/.forge_staging/<generation_id>/` where `generation_id` is a timestamp slug created at pipeline start
-- On startup / new pipeline run, any stale staging directories older than 24h are deleted
-- Triggers tModLoader build against the staging directory
+### `forge_compile(cs_code: str, manifest: dict, generation_id: str) → dict`
+- Creates `agents/.forge_staging/<generation_id>/` if it does not exist
+- Derives hjson deterministically from `manifest.item_name`, `manifest.display_name`, `manifest.tooltip` — the only place hjson is generated
+- Writes cs_code + hjson to staging dir, triggers tModLoader build against staging
+- Deletes staging directories older than 24h on each call (stale cleanup)
 - Returns `{status: "success"|"error", errors: [str], artifact_path: str}`
-- Errors are human-readable strings formatted for the next Coder subagent prompt
 
-### `forge_generate_sprite(description, size, animation_frames, kind, reference_path?)`
+### `forge_generate_sprite(description: str, size: list[int], animation_frames: int, kind: str, reference_path: str|None, generation_id: str) → dict`
 - `kind`: `"item"` or `"projectile"`
-- `reference_path`: optional path to a downloaded reference image; if provided, uses FAL img2img mode; if null, uses text-to-image mode
-- Calls existing FAL.ai Node.js runner (pixelsmith internals unchanged)
-- Runs full audition: generates 3 candidates per call
-- Returns `{status, candidate_paths: [...]}` — Judge subagent reads each path with the Read tool to view images
+- If `reference_path` is not None: uploads local file to FAL storage via `_upload_ref.mjs` before calling img2img endpoint
+- If `reference_path` is None: calls text-to-image endpoint
+- Pixelsmith internals (FAL Node.js runner, audition logic) unchanged
+- Returns `{status: "success"|"error", candidate_paths: [str × 3]}`
 
-### `forge_inject(item_name, cs_code, manifest, item_sprite_path, projectile_sprite_path)`
-- Canonical signature: sprites passed as file paths returned by the Sprite-Judge, not embedded in manifest
-- The ONLY tool that mutates the live `ForgeGeneratedMod` surface
-- Re-derives hjson deterministically from manifest (same logic as forge_compile — no drift)
-- Atomically moves staged files from `agents/.forge_staging/<generation_id>/` into `ForgeGeneratedMod/Content/`
-- Copies selected sprite files into `ForgeGeneratedMod/Content/Items/` and `ForgeGeneratedMod/Content/Projectiles/`
+### `forge_inject(item_name: str, cs_code: str, manifest: dict, item_sprite_path: str, projectile_sprite_path: str, generation_id: str) → dict`
+- The ONLY tool that mutates live `ForgeGeneratedMod`
+- Re-derives hjson from manifest (same logic as forge_compile — no drift between compile and inject)
+- Atomically moves `agents/.forge_staging/<generation_id>/` contents into `ForgeGeneratedMod/Content/`
+- Copies sprite files into `ForgeGeneratedMod/Content/Items/` and `Content/Projectiles/`
 - Writes `forge_inject.json` to trigger ForgeConnector watcher
-- Returns `{status, error_message, reload_required: true}`
-- Reload sequence: user must reload mods in tModLoader AFTER inject completes — ForgeConnector watcher fires on the next poll cycle post-reload, then spawns the item
+- Deletes staging dir on success
+- Returns `{status: "success"|"error", error_message: str|None, reload_required: true}`
 
 ### `forge_status()`
 - Reads `generation_status.json` and `forge_connector_alive.json`
@@ -218,7 +217,7 @@ Each prompt is self-contained — no assumed context from the main session.
 
 **Architect-Manifest [Sonnet]**
 - Receives: winning concept + tier + manifest_schema + tier1_omit_fields list
-- Produces: full manifest JSON matching existing schema (item_name, stats, visuals, mechanics, projectile_visuals, spectacle_plan, mechanics_ir)
+- Produces: full manifest JSON including `references.item.needed: bool` and `references.projectile.needed: bool` — set true only when the visual description is unusual enough that a real-world reference image would meaningfully help (e.g. a specific blade shape, unusual silhouette, real object being stylized)
 - Schema is embedded in the prompt with `// tier3 only` annotations on optional fields
 - For Tier 1: prompt explicitly instructs to omit `spectacle_plan.ai_phases`, `spectacle_plan.render_passes`, and `mechanics_ir` entirely — do not supply empty arrays or stub values
 
