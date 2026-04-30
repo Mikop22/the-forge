@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from forge_master.critique import CritiqueContext, critique_generated_code
+from core.critique_engine import CritiqueContext, critique_generated_code
 
 
 def critique_violations(manifest: dict, cs_code: str) -> list[str]:
