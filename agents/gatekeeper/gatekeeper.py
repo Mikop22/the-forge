@@ -350,17 +350,8 @@ class Integrator:
     def _manifest_contract_errors(manifest: dict | None, cs_code: str) -> list[str]:
         if not isinstance(manifest, dict) or not manifest:
             return []
-        try:
-            from forge_master.forge_master import (
-                _critique_violations,
-                _validate_projectile_hitbox_contract,
-            )
-        except ImportError:
-            from forge_master import (  # type: ignore
-                _critique_violations,
-                _validate_projectile_hitbox_contract,
-            )
-        return _validate_projectile_hitbox_contract(manifest, cs_code) + _critique_violations(
+        from core.critique_rules import critique_violations, validate_projectile_hitbox_contract
+        return validate_projectile_hitbox_contract(manifest, cs_code) + critique_violations(
             manifest, cs_code
         )
 
