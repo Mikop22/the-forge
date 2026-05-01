@@ -2,8 +2,6 @@
 # The Forge
 ### Describe an item, The Forge can conceptualize it, generate art, make novel animations, write the code and inject the item, *without reloading the game*.
 
-*IDE agent + MCP tools — inject into a running game without a full reload. (Legacy Bubble Tea “terminal app” lives under `archive/BubbleTeaTerminal/`.)*
-
 <p align="center">
   <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
 </p>
