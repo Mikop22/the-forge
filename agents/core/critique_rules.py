@@ -5,9 +5,14 @@ from __future__ import annotations
 import re
 
 from core.critique_engine import CritiqueContext, critique_generated_code
+from core.csharp_parse import first_modprojectile_setdefaults_body
 
 
 def critique_violations(manifest: dict, cs_code: str) -> list[str]:
+    """Run structural critique and return prefixed strings for Roslyn-style surfaces.
+
+    Each entry is ``CRITIQUE: [rule_id] message`` suitable for gatekeeper repair loops.
+    """
     item_name = str(manifest.get("item_name") or "GeneratedItem")
     critique = critique_generated_code(
         cs_code,
@@ -17,45 +22,6 @@ def critique_violations(manifest: dict, cs_code: str) -> list[str]:
         ),
     )
     return [f"CRITIQUE: [{issue.rule}] {issue.message}" for issue in critique.issues]
-
-
-def _strip_csharp_comments(code: str) -> str:
-    code = re.sub(r"/\*[\s\S]*?\*/", "", code)
-    return re.sub(r"//.*", "", code)
-
-
-def _balanced_block(text: str, open_idx: int) -> str:
-    depth = 0
-    for idx in range(open_idx, len(text)):
-        char = text[idx]
-        if char == "{":
-            depth += 1
-            continue
-        if char != "}":
-            continue
-        depth -= 1
-        if depth == 0:
-            return text[open_idx + 1 : idx]
-    return ""
-
-
-def _first_modprojectile_setdefaults_body(cs_code: str) -> str:
-    code = _strip_csharp_comments(cs_code)
-    for class_match in re.finditer(
-        r"class\s+\w+\s*:\s*(?:[\w.]+\.)?ModProjectile\b", code
-    ):
-        class_open = code.find("{", class_match.end())
-        if class_open == -1:
-            continue
-        class_body = _balanced_block(code, class_open)
-        method_match = re.search(r"override\s+void\s+SetDefaults\s*\(\s*\)", class_body)
-        if not method_match:
-            continue
-        method_open = class_body.find("{", method_match.end())
-        if method_open == -1:
-            continue
-        return _balanced_block(class_body, method_open)
-    return ""
 
 
 def validate_projectile_hitbox_contract(manifest: dict, cs_code: str) -> list[str]:
@@ -73,7 +39,7 @@ def validate_projectile_hitbox_contract(manifest: dict, cs_code: str) -> list[st
     except (TypeError, ValueError):
         return []
 
-    setdefaults_body = _first_modprojectile_setdefaults_body(cs_code)
+    setdefaults_body = first_modprojectile_setdefaults_body(cs_code)
     width_match = re.search(r"Projectile\.width\s*=\s*(\d+)\s*;", setdefaults_body)
     height_match = re.search(r"Projectile\.height\s*=\s*(\d+)\s*;", setdefaults_body)
     if not width_match or not height_match:

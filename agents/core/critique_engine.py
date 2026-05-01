@@ -11,8 +11,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Mapping
 
+from core.csharp_parse import balanced_brace_block, first_modprojectile_setdefaults_body
 
 SymbolRegistry = Mapping[str, set[str]]
+
+# Heuristic windows (characters / counts), not game constants.
+_DUST_CADENCE_LOOKBACK_CHARS = 600
+_MIN_SPECTACLE_TRAIL_CACHE_LENGTH = 14
 
 
 DEFAULT_VALID_SYMBOLS: dict[str, set[str]] = {}
@@ -170,7 +175,7 @@ def _unthrottled_dust(cs_code: str) -> list[CritiqueIssue]:
         re.finditer(r"Dust\.NewDust(?:Perfect|Direct)?\s*\(", ai_body)
     )
     for call in dust_calls:
-        prefix = ai_body[max(0, call.start() - 600) : call.start()]
+        prefix = ai_body[max(0, call.start() - _DUST_CADENCE_LOOKBACK_CHARS) : call.start()]
         if _has_dust_cadence(prefix):
             continue
         return [
@@ -196,7 +201,7 @@ def _hitbox_mismatches(cs_code: str, manifest: dict) -> list[CritiqueIssue]:
     except (TypeError, ValueError):
         return []
 
-    setdefaults_body = _first_modprojectile_setdefaults_body(cs_code)
+    setdefaults_body = first_modprojectile_setdefaults_body(cs_code)
     width_match = re.search(r"Projectile\.width\s*=\s*(\d+)\s*;", setdefaults_body)
     height_match = re.search(r"Projectile\.height\s*=\s*(\d+)\s*;", setdefaults_body)
     if not width_match or not height_match:
@@ -260,11 +265,12 @@ def _spectacle_plan_issues(cs_code: str, manifest: dict) -> list[CritiqueIssue]:
         cs_code,
     )
     trail_len = _resolve_int_expr(cs_code, trail_match.group(1)) if trail_match else None
-    if trail_len is None or trail_len < 14:
+    if trail_len is None or trail_len < _MIN_SPECTACLE_TRAIL_CACHE_LENGTH:
         issues.append(
             CritiqueIssue(
                 "spectacle_trail",
-                "spectacle_plan projectiles need TrailCacheLength[Type] >= 14 for readable afterimages.",
+                "spectacle_plan projectiles need TrailCacheLength[Type] >= "
+                f"{_MIN_SPECTACLE_TRAIL_CACHE_LENGTH} for readable afterimages.",
             )
         )
 
@@ -734,6 +740,7 @@ def _resolve_int_expr(cs_code: str, expr: str) -> int | None:
 
 
 def _method_body(cs_code: str, method_name: str) -> str:
+    """Extract method body; whitespace/comments inside body are preserved."""
     match = re.search(
         rf"\b(?:public|private|protected|internal)?\s*(?:override\s+)?[\w<>.\[\]]+\s+{re.escape(method_name)}\s*\([^)]*\)",
         cs_code,
@@ -743,52 +750,4 @@ def _method_body(cs_code: str, method_name: str) -> str:
     open_idx = cs_code.find("{", match.end())
     if open_idx == -1:
         return ""
-    depth = 0
-    for idx in range(open_idx, len(cs_code)):
-        char = cs_code[idx]
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return cs_code[open_idx + 1 : idx]
-    return ""
-
-
-def _strip_csharp_comments(code: str) -> str:
-    code = re.sub(r"/\*[\s\S]*?\*/", "", code)
-    return re.sub(r"//.*", "", code)
-
-
-def _balanced_block(text: str, open_idx: int) -> str:
-    depth = 0
-    for idx in range(open_idx, len(text)):
-        char = text[idx]
-        if char == "{":
-            depth += 1
-            continue
-        if char != "}":
-            continue
-        depth -= 1
-        if depth == 0:
-            return text[open_idx + 1 : idx]
-    return ""
-
-
-def _first_modprojectile_setdefaults_body(cs_code: str) -> str:
-    code = _strip_csharp_comments(cs_code)
-    for class_match in re.finditer(
-        r"class\s+\w+\s*:\s*(?:[\w.]+\.)?ModProjectile\b", code
-    ):
-        class_open = code.find("{", class_match.end())
-        if class_open == -1:
-            continue
-        class_body = _balanced_block(code, class_open)
-        method_match = re.search(r"override\s+void\s+SetDefaults\s*\(\s*\)", class_body)
-        if not method_match:
-            continue
-        method_open = class_body.find("{", method_match.end())
-        if method_open == -1:
-            continue
-        return _balanced_block(class_body, method_open)
-    return ""
+    return balanced_brace_block(cs_code, open_idx)

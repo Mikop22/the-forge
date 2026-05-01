@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+These notes apply when editing the **archived** Go Bubble Tea terminal UI under **`archive/BubbleTeaTerminal/`**. The primary Forge workflow today is **MCP** (`agents/mcp_server.py`) plus an IDE forge skill — see the root **README.md**.
+
 ## TUI UX Standards
 
 ### Keyboard Flow
@@ -30,7 +32,7 @@
 - Staging may show richer Terraria item details, but action hints must stay visible.
 
 ### Merge Checklist For TUI Changes
-- `go test ./...` passes from `BubbleTeaTerminal`.
+- `go test ./...` passes from `archive/BubbleTeaTerminal` (after `cd archive/BubbleTeaTerminal`).
 - A keyboard escape path is tested for any new screen or mode.
 - Narrow terminal rendering is tested.
 - Async success and failure states are tested.

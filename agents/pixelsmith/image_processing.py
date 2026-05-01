@@ -1,10 +1,11 @@
 """Image post-processing pipeline for the Pixelsmith agent.
 
 Steps (in order):
-1. remove_background  – strip white/coloured background → transparent RGBA
-2. downscale          – nearest-neighbor resize to target sprite size
-3. enforce_outline    – add a dark pixel-art border around the silhouette
-4. process_image      – convenience function chaining all three steps
+1. remove_background – flood-fill from edges against dominant border colors → transparent RGBA
+   (not ML matting; preserves interior detail disconnected from the canvas edge).
+2. downscale – nearest-neighbor resize to target sprite size
+3. enforce_outline – add a dark pixel-art border around the silhouette
+4. process_image – convenience function chaining all three steps
 """
 
 from __future__ import annotations

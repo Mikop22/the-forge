@@ -1,7 +1,7 @@
 from pathlib import Path
 
 _CONNECTOR_SOURCE = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "mod"
     / "ForgeConnector"
     / "ForgeConnectorSystem.cs"

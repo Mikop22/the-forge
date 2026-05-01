@@ -743,18 +743,21 @@ def test_build_and_verify_stages_manifest_hjson_on_success(tmp_path) -> None:
     ):
         with mock.patch.object(integ, "_write_status"):
             with mock.patch.object(integ, "_ensure_mod_enabled"):
-                integ.build_and_verify(
-                    {
-                        "status": "success",
-                        "cs_code": cs,
-                        "hjson_code": hjson_bogus,
-                    },
-                    sprite_path=str(item_png),
-                    manifest={
-                        "display_name": "Hello",
-                        "tooltip": "World",
-                    },
-                )
+                with mock.patch.object(
+                    Integrator, "_manifest_contract_errors", return_value=[]
+                ):
+                    integ.build_and_verify(
+                        {
+                            "status": "success",
+                            "cs_code": cs,
+                            "hjson_code": hjson_bogus,
+                        },
+                        sprite_path=str(item_png),
+                        manifest={
+                            "display_name": "Hello",
+                            "tooltip": "World",
+                        },
+                    )
 
     path = mod_root / "Localization" / "en-US.hjson"
     text = path.read_text(encoding="utf-8")

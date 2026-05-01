@@ -1,4 +1,15 @@
-"""Bounded variant generation for the Forge Director workshop."""
+"""Bounded variant generation for the Forge Director workshop.
+
+Always emits **three** workshop variants from the bench manifest. ``directive`` text picks a
+template triple (labels + narrative strings); ``_materialize_manifest`` applies small **stat
+deltas** per theme so variants differ without rerolling codegen:
+
+- ``stronger-impact``: +1 damage, +0.5 knockback (heavier hit feel).
+- ``cleaner-read``: −1 use_time (snappier cadence), capped at 1.
+- ``bigger-spectacle``: +2 damage, +1 use_time (more wind-up / payoff framing).
+
+Those numbers are deliberately modest tuning knobs for UX comparison, not balance doctrine.
+"""
 
 from __future__ import annotations
 
@@ -70,6 +81,7 @@ def build_variants(
     sprite_path: str | None = None,
     projectile_sprite_path: str | None = None,
 ) -> list[dict[str, Any]]:
+    """Produce three labeled variants from ``bench_manifest`` using ``directive`` template selection."""
     variants: list[dict[str, Any]] = []
     for idx, (theme, label, rationale, change_summary) in enumerate(_variant_templates(directive), start=1):
         variants.append(

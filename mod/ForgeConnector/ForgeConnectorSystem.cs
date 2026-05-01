@@ -1047,6 +1047,18 @@ namespace ForgeConnector
                 HandleHiddenLabRequestTrigger();
         }
 
+        private void TryDeleteModSourcesFile(string path, string role)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Warn($"[ForgeConnector] Could not delete {role}: {ex.Message}");
+            }
+        }
+
         private void HandleCommandTrigger()
         {
             Thread.Sleep(50);
@@ -1060,7 +1072,7 @@ namespace ForgeConnector
                 if (actionEl.GetString() != "execute")
                     return;
 
-                try { File.Delete(_triggerPath); } catch { }
+                TryDeleteModSourcesFile(_triggerPath, "command_trigger.json");
 
                 Interlocked.Exchange(ref _reloadRequested, 1);
             }
@@ -1080,7 +1092,7 @@ namespace ForgeConnector
                 Mod.Logger.Info("[ForgeConnector] HandleInjectTrigger: read " + json.Length + " bytes");
 
                 // Delete immediately to prevent double-fire
-                try { File.Delete(_injectPath); } catch { }
+                TryDeleteModSourcesFile(_injectPath, "forge_inject.json");
 
                 // Store JSON for main-thread processing
                 Interlocked.Exchange(ref _pendingInjectJson, json);
@@ -1115,8 +1127,8 @@ namespace ForgeConnector
                     ? loopEl.GetString() ?? string.Empty
                     : string.Empty;
 
-                try { File.Delete(_hiddenLabResultPath); } catch { }
-                try { File.Delete(_hiddenLabRequestPath); } catch { }
+                TryDeleteModSourcesFile(_hiddenLabResultPath, "forge_lab_hidden_result.json");
+                TryDeleteModSourcesFile(_hiddenLabRequestPath, "forge_lab_hidden_request.json");
 
                 Interlocked.Exchange(ref _pendingInjectJson, json);
                 Interlocked.Exchange(ref _injectRequested, 1);
@@ -1304,7 +1316,7 @@ namespace ForgeConnector
         // Reload trigger (legacy path)
         // ------------------------------------------------------------------
 
-        private static bool TriggerReload()
+        private bool TriggerReload()
         {
             try
             {
@@ -1325,7 +1337,10 @@ namespace ForgeConnector
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Mod.Logger.Warn("[ForgeConnector] TriggerReload interface reflection failed: " + ex.Message);
+            }
 
             try
             {
@@ -1337,7 +1352,10 @@ namespace ForgeConnector
                 reloadMethod.Invoke(null, null);
                 return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Mod.Logger.Warn("[ForgeConnector] TriggerReload ModLoader.Reload fallback failed: " + ex.Message);
+            }
 
             return false;
         }
@@ -1509,12 +1527,10 @@ namespace ForgeConnector
                 File.WriteAllText(tmp, json);
                 File.Move(tmp, _heartbeatPath, overwrite: true);
             }
-            catch { }
-        }
-
-        private static JsonElement GetOptionalObject(JsonElement parent, string prop)
-        {
-            return TryGetObject(parent, prop, out var value) ? value : default;
+            catch (Exception ex)
+            {
+                Mod.Logger.Warn("[ForgeConnector] WriteHeartbeat failed: " + ex.Message);
+            }
         }
 
         private static string NormalizeContentType(string value)

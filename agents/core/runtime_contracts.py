@@ -83,6 +83,7 @@ class RuntimeGateEvaluation(BaseModel):
 
 
 def load_hidden_lab_request(payload: dict[str, Any]) -> HiddenLabRequest:
+    """Parse and validate a ``forge_lab_hidden_request``-style dict."""
     return HiddenLabRequest.model_validate(payload)
 
 
@@ -98,10 +99,13 @@ def _manifest_runtime_identity(manifest: Mapping[str, Any]) -> dict[str, str]:
         or mechanics_data.get("combat_package")
         or ""
     ).strip()
+    fallback_loop = ""
+    for pk, lf in _SUPPORTED_HIDDEN_LAB_RUNTIME.items():
+        if pk == package_key:
+            fallback_loop = lf
+            break
     loop_family = str(
-        resolved_combat_data.get("loop_family")
-        or _SUPPORTED_HIDDEN_LAB_RUNTIME.get(package_key)  # type: ignore[arg-type]
-        or ""
+        resolved_combat_data.get("loop_family") or fallback_loop or ""
     ).strip()
     result: dict[str, str] = {}
     if package_key:
@@ -139,6 +143,7 @@ def build_hidden_lab_request(
 
 
 def load_hidden_lab_result(payload: dict[str, Any]) -> HiddenLabResult:
+    """Parse lab telemetry result JSON into ``HiddenLabResult``."""
     return HiddenLabResult.model_validate(load_lab_result(payload).model_dump())
 
 
@@ -152,6 +157,7 @@ def runtime_result_has_terminal_evidence(result: RuntimeLabResult) -> bool:
 def evaluate_behavior_contract(
     contract: BehaviorContract, result: RuntimeLabResult
 ) -> RuntimeGateEvaluation:
+    """Check seed → escalate → cashout timing and counts against ``BehaviorContract`` budgets."""
     cashout_index = next(
         (
             index

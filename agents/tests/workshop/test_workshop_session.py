@@ -36,6 +36,13 @@ def test_session_store_tracks_active_session(tmp_path) -> None:
     assert store.load_active()["bench"]["item_id"] == "orbit-furnace"
 
 
+def test_session_store_corrupt_json_load_returns_empty_dict(tmp_path) -> None:
+    store = WorkshopSessionStore(tmp_path)
+    bad = tmp_path / "sess-bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    assert store.load("sess-bad") == {}
+
+
 def test_session_store_round_trips_session_shell_state(tmp_path) -> None:
     store = WorkshopSessionStore(tmp_path)
     shell = SessionShellState(
@@ -59,15 +66,6 @@ def test_session_store_round_trips_session_shell_state(tmp_path) -> None:
         "keep the cashout",
     ]
     assert loaded_shell.pinned_notes == ["keep the cashout", "trail too noisy"]
-
-
-def test_session_store_recovers_missing_active_pointer_from_newest_session(tmp_path) -> None:
-    store = WorkshopSessionStore(tmp_path)
-    store.save({"session_id": "sess-1", "bench": {"item_id": "storm-brand"}})
-    store.save({"session_id": "sess-2", "bench": {"item_id": "orbit-furnace"}})
-
-    assert store.active_session_id() == "sess-2"
-    assert store.load_active()["bench"]["item_id"] == "orbit-furnace"
 
 
 def test_session_store_recovers_stale_active_pointer_from_newest_session(tmp_path) -> None:

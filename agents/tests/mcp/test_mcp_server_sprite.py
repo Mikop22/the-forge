@@ -45,5 +45,6 @@ def test_forge_generate_sprite_passes_reference_when_supplied(tmp_path: Path) ->
             generation_id="20260430_120001",
         )
 
-    args, kwargs = mock_run.call_args
-    assert kwargs.get("reference_path") == str(ref) or (args and args[-1] == str(ref))
+    mock_run.assert_called_once()
+    _args, kwargs = mock_run.call_args
+    assert kwargs["reference_path"] == str(ref)

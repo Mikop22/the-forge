@@ -1,4 +1,13 @@
-"""Persistence helpers for Forge Director workshop sessions."""
+"""Persistence helpers for Forge Director workshop sessions.
+
+Layout under ``root``:
+
+- ``<session_id>.json`` — full session payload (bench, shelf, ``session_shell``, …).
+- ``active_session.txt`` — legacy pointer to the active session id (optional); when present
+  but stale, ``active_session_id()`` prefers the newest ``*.json`` by mtime.
+
+``save()`` does not write ``active_session.txt``; newest JSON wins for ``active_session_id()``.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +20,8 @@ from contracts.session_shell import SessionShellState
 
 
 class WorkshopSessionStore:
+    """Read/write per-session JSON next to an optional legacy active-session pointer."""
+
     def __init__(self, root: Path) -> None:
         self._root = Path(root)
         self._active_path = self._root / "active_session.txt"
@@ -45,10 +56,15 @@ class WorkshopSessionStore:
         return paths[-1].stem
 
     def load(self, session_id: str) -> dict[str, Any]:
+        """Load session JSON. Missing file → ``{}``; corrupt JSON → ``{}``."""
         path = self._session_path(session_id)
         if not path.exists():
             return {}
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def save_session_shell(self, session_id: str, shell: SessionShellState) -> None:
         session = self.load(session_id)
@@ -67,6 +83,7 @@ class WorkshopSessionStore:
         return SessionShellState.model_validate(raw_shell)
 
     def active_session_id(self) -> str | None:
+        """Newest ``*.json`` session id, else legacy ``active_session.txt`` if still valid."""
         session_id = self._most_recent_session_id()
         if session_id is not None:
             return session_id

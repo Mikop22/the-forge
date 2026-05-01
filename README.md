@@ -2,7 +2,7 @@
 # The Forge
 ### Describe an item, The Forge can conceptualize it, generate art, make novel animations, write the code and inject the item, *without reloading the game*.
 
-*Terminal App*
+*IDE agent + MCP tools — inject into a running game without a full reload. (Legacy Bubble Tea “terminal app” lives under `archive/BubbleTeaTerminal/`.)*
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
@@ -15,6 +15,14 @@ https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 
 ## Architecture (High Level)
+
+### How you run it today (MCP)
+
+The maintained path is **Model Context Protocol**: an IDE agent (e.g. Claude Code, Cursor) drives **`agents/mcp_server.py`**, which compiles, generates sprites, and writes **`forge_inject.json`** under your **tModLoader ModSources** tree. **ForgeConnector** (the C# mod) watches those files and applies the item in-game.
+
+- **ModSources root** is resolved from `FORGE_MOD_SOURCES_DIR`, or `mod_sources_dir` in `~/.config/theforge/config.toml`, or the default OS path (see `agents/core/paths.py`).
+- **tModLoader** for `dotnet` builds: set **`TMODLOADER_PATH`** if auto-discovery fails (see `agents/core/compilation_harness.py`).
+- **Archived stack** (Go Bubble Tea UI + monolithic Python orchestrator + `forge_master`) lives under **`archive/`** and is not wired into this flow — see [Optional: archived terminal UI](#optional-archived-terminal-ui) if you need it for reference.
 
 ### The whole thing — prompt to playable *without reloading the game*
 
@@ -162,11 +170,11 @@ The spec isn't a static document, it gets richer as it travels. The artist hands
 
 ## Prerequisites
 
-- Terraria with tModLoader installed
-- Go `1.24+`
-- Python `3.12+`
-- Node `18+`
-- Playwright runtime for reference image lookup
+- Terraria with **tModLoader** installed
+- **Python** `3.12+`
+- **Node** `18+` (Pixelsmith FAL bridge)
+- **Playwright** + Chromium for reference image lookup (Pixelsmith / skill workflows)
+- **Go** `1.24+` — **optional**, only if you build or hack the [archived](#optional-archived-terminal-ui) Bubble Tea UI under `archive/BubbleTeaTerminal/`
 
 ## Setup
 
@@ -195,8 +203,8 @@ FAL_KEY=your-fal-key
 
 | Key | Use |
 |-----|-----|
-| `OPENAI_API_KEY` | Architect, Forge Master, orchestration |
-| `FAL_KEY` | Pixelsmith image generation |
+| `OPENAI_API_KEY` | LLM calls used by your forge skill / agent workflows |
+| `FAL_KEY` | Pixelsmith image generation (`forge_generate_sprite`) |
 
 ### 3. Pixelsmith weights (must have for terraria compatible sprites)
 
@@ -227,14 +235,7 @@ cd agents/pixelsmith
 npm install @fal-ai/client
 ```
 
-### 6. Go dependencies
-
-```bash
-cd BubbleTeaTerminal
-go mod download
-```
-
-### 7. Install `ForgeConnector`
+### 6. Install `ForgeConnector`
 
 `ForgeConnector` is the tModLoader mod that enables live injection and runtime status.
 
@@ -245,19 +246,36 @@ go mod download
 2. Build `ForgeConnector` from tModLoader's mod tools
 3. Enable it in the mod list
 
-## Running The Forge
+### Optional: archived terminal UI
 
-From `BubbleTeaTerminal/`:
+The legacy **Go TUI** is preserved under **`archive/BubbleTeaTerminal/`**. It is **not** the primary workflow. If you need it:
 
 ```bash
+cd archive/BubbleTeaTerminal
+go mod download
 go run .
 ```
+
+That UI expected the old Python orchestrator under **`archive/agents/`** (file-based IPC). Do not expect it to work end-to-end unless you restore that stack yourself.
+
+## Running The Forge (MCP)
+
+1. **Point tooling at ModSources** — set `FORGE_MOD_SOURCES_DIR` or configure `mod_sources_dir` in `~/.config/theforge/config.toml` so inject/compile targets match where `ForgeConnector` and `ForgeGeneratedMod` live.
+2. **Register the MCP server** in Claude Code, Cursor, or any MCP client. Run it from the **`agents/`** directory so imports resolve:
+
+```bash
+cd agents
+source .venv/bin/activate
+python mcp_server.py
 ```
 
+3. **Use your forge skill** (workflow prompts are typically under `.claude/skills/` or your team’s skill pack) so the agent chains codegen → **`forge_compile`** → **`forge_generate_sprite`** → **`forge_inject`**, with **`forge_status`** for heartbeat/pipeline stage.
+
+Natural-language requests flow through the skill; execution hits the four tools below — see [MCP tools](#mcp-tools).
 
 ## Supported Item Types
 
-The orchestrator infers `sub_type` from prompt keywords (with substring-trap precedence — `pickaxe` beats `axe`, `broadsword` beats `sword`, `shotgun` beats `gun`).
+The **forge skill / codegen path** infers `sub_type` from prompt keywords (with substring-trap precedence — `pickaxe` beats `axe`, `broadsword` beats `sword`, `shotgun` beats `gun`).
 
 | Class | Sub-types |
 |---|---|
@@ -283,39 +301,43 @@ All ranged sub-types emit working `Item.shoot` and ammo/mana wiring; tools emit 
 
 ```text
 the-forge/
-├── BubbleTeaTerminal/
-│   ├── main.go
-│   ├── screen_forge.go
-│   ├── screen_staging.go
-│   └── internal/
-│       ├── ipc/
-│       └── modsources/
-├── agents/
-│   ├── orchestrator.py
-│   ├── contracts/
-│   ├── core/
-│   ├── architect/
-│   ├── pixelsmith/
-│   ├── forge_master/
-│   └── gatekeeper/
-└── mod/
-    └── ForgeConnector/
+├── agents/                    # active Python + MCP
+│   ├── mcp_server.py         # FastMCP: compile / sprite / inject / status
+│   ├── contracts/            # Pydantic wire models (IPC, workshop, session)
+│   ├── core/                 # paths, staging, hjson, compile harness, critique, workshop helpers
+│   ├── pixelsmith/           # sprite generation (FAL, gates, audition)
+│   ├── gatekeeper/           # Integrator build path (orchestrator-era; not used by mcp_server)
+│   ├── tests/                # pytest — core/, pixelsmith/, gatekeeper/, contracts/, mcp/, workshop/, stress/, fixtures/
+│   ├── qa/                   # corpus, quarantine_check, run artifacts (qa/results/)
+│   ├── requirements.txt
+│   └── .env / .env.example
+├── mod/
+│   └── ForgeConnector/        # tModLoader live inject + file watcher
+├── archive/                  # legacy Go TUI + Python orchestrator + forge_master (reference only)
+│   ├── BubbleTeaTerminal/
+│   └── agents/
+└── README.md, CLAUDE.md
 ```
 
 ## Reference-Aware Generation
 
 When a prompt references a known object, weapon, or character, the pipeline can fetch references and use them to guide sprite generation.
 
-## Architecture (post-MCP migration)
+## MCP tools
 
-The Forge runs as a Claude Code skill backed by a thin MCP server.
+`agents/mcp_server.py` registers **FastMCP** tool `forge` with:
 
-- `.claude/skills/forge.md` — workflow, tier inference, all subagent prompts
-- `agents/mcp_server.py` — 4 execution tools: forge_compile, forge_generate_sprite, forge_inject, forge_status
-- `agents/core/` — shared compile / hjson / staging / critique modules
-- `agents/pixelsmith/` — FAL.ai sprite generation (unchanged)
-- `agents/gatekeeper/` — tModLoader build + atomic inject (unchanged from old pipeline core)
-- `mod/ForgeConnector/` — C# tModLoader watcher (unchanged)
-- `archive/` — preserved old Python orchestrator + Go TUI (no longer wired in)
+| Tool | Role |
+|------|------|
+| `forge_status` | Reads `forge_connector_alive.json` and `generation_status.json` under ModSources |
+| `forge_compile` | Stages C#, writes localization hjson, runs `dotnet` + `tModLoader.dll -build` |
+| `forge_generate_sprite` | Pixelsmith audition candidates under the staging tree |
+| `forge_inject` | Promotes into `ForgeGeneratedMod`, copies PNGs, writes `forge_inject.json` |
 
-To use: open this repo in Claude Code and say "make a [weapon]". The skill drives Architect / Coder / Reviewer / Reference-Finder / Sprite-Judge subagents and orchestrates the MCP tools end-to-end.
+**Environment:** `FORGE_MOD_SOURCES_DIR` (optional) overrides ModSources root; **`TMODLOADER_PATH`** (optional) if tModLoader cannot be found for builds.
+
+**Skill / prompts:** configure your IDE’s forge skill (commonly under `.claude/skills/`) to plan subagent work and call these tools in order. The skill is not in this repository by default; point your client at the skill pack you use with this repo.
+
+**Other code:** `agents/gatekeeper/` (Integrator) is the older orchestrator-style build/repair path; **`mcp_server` does not import it** — both can coexist for migration or custom scripts.
+
+**Archive:** `archive/agents/` holds the monolithic orchestrator, `forge_master/`, and related QA runners — kept for history, not the default entrypoint.

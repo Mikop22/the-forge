@@ -9,7 +9,7 @@ import pytest
 
 from contracts.ipc import GenerationStatus, UserRequest
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 _FIXTURES = _REPO_ROOT / "fixtures" / "ipc"
 
 
