@@ -16,14 +16,6 @@ https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
 ## Architecture (High Level)
 
-### How you run it today (MCP)
-
-The maintained path is **Model Context Protocol**: an IDE agent (e.g. Claude Code, Cursor) drives **`agents/mcp_server.py`**, which compiles, generates sprites, and writes **`forge_inject.json`** under your **tModLoader ModSources** tree. **ForgeConnector** (the C# mod) watches those files and applies the item in-game.
-
-- **ModSources root** is resolved from `FORGE_MOD_SOURCES_DIR`, or `mod_sources_dir` in `~/.config/theforge/config.toml`, or the default OS path (see `agents/core/paths.py`).
-- **tModLoader** for `dotnet` builds: set **`TMODLOADER_PATH`** if auto-discovery fails (see `agents/core/compilation_harness.py`).
-- **Archived stack** (Go Bubble Tea UI + monolithic Python orchestrator + `forge_master`) lives under **`archive/`** and is not wired into this flow — see [Optional: archived terminal UI](#optional-archived-terminal-ui) if you need it for reference.
-
 ### The whole thing — prompt to playable *without reloading the game*
 
 ```mermaid
