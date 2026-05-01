@@ -298,45 +298,21 @@ class Integrator:
                     error_message=f"Build failed after {self._max_retries} retries.",
                 ).model_dump()
 
-            if not self._coder:
-                try:
-                    from forge_master.forge_master import CoderAgent
-                except ImportError:
-                    from forge_master import CoderAgent
-                self._coder = CoderAgent()
-
-            repair_result = self._coder.fix_code(
-                error_log=result.output,
-                original_code=cs_code,
-                manifest=manifest,
+            error_code = errors[0].code if errors else "UNKNOWN"
+            self._write_status(
+                {
+                    "status": "error",
+                    "error_code": error_code,
+                    "message": "Critical Failure: The compiler rejected the generated logic.",
+                }
             )
-
-            if repair_result.get("status") == "error":
-                error_code = errors[0].code if errors else "UNKNOWN"
-                self._write_status(
-                    {
-                        "status": "error",
-                        "error_code": error_code,
-                        "message": "Critical Failure: The compiler rejected the generated logic.",
-                    }
-                )
-                return GatekeeperResult(
-                    status="error",
-                    item_name=item_name,
-                    attempts=attempt + 1,
-                    errors=errors,
-                    error_message="CoderAgent repair failed.",
-                ).model_dump()
-
-            cs_code = repair_result["cs_code"]
-            self._stage_files(
-                cs_code,
-                hjson_code,
-                item_name,
-                sprite_path=sprite_path,
-                projectile_sprite_path=projectile_sprite_path,
-                manifest=manifest,
-            )
+            return GatekeeperResult(
+                status="error",
+                item_name=item_name,
+                attempts=attempt,
+                errors=errors,
+                error_message=f"Build failed on attempt {attempt}.",
+            ).model_dump()
 
         # Should be unreachable, but guard against falling through.
         return GatekeeperResult(
@@ -468,21 +444,17 @@ class Integrator:
     ) -> str:
         """Prefer manifest-driven localization so tooltip markup cannot break Hjson.
 
-        CoderAgent._generate_hjson JSON-encodes display/tooltip strings. LLM-merged
-        hjson (or _merge_hjson) can still corrupt when tooltips use raw newlines
-        or ``}`` inside unquoted Terraria color tags.
+        Manifest-driven generation JSON-encodes display/tooltip strings, preventing
+        hjson corruption from raw newlines or ``}`` inside unquoted Terraria color tags.
         """
         if not isinstance(manifest, dict):
             return hjson_code
         if "display_name" not in manifest and "tooltip" not in manifest:
             return hjson_code
-        try:
-            from forge_master.forge_master import CoderAgent
-        except ImportError:  # pragma: no cover - alternate package layout
-            from forge_master import CoderAgent
+        from core.hjson_gen import generate_hjson
         display = str(manifest.get("display_name", item_name))
         tooltip = str(manifest.get("tooltip", ""))
-        return CoderAgent._generate_hjson(
+        return generate_hjson(
             item_name=item_name,
             display_name=display,
             tooltip=tooltip,
