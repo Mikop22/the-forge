@@ -7,7 +7,11 @@ description: Generate Terraria mod weapons end-to-end via Architect/Coder/Review
 
 ## 0 — When to Invoke
 
-Trigger on: "make a [weapon]", "generate a [weapon]", "build a [tier name] [weapon]", "forge a …", "inject … into Terraria". Do not trigger on general Terraria questions.
+**Slash command:** `/forge <description>` — e.g. `/forge a void pistol that charges before firing`, `/forge simple starter sword`, `/forge tier 2 homing staff`.
+
+If invoked with no args (bare `/forge`), ask: "What weapon would you like to forge?"
+
+**Natural language:** Also triggers on "make a [weapon]", "generate a [weapon]", "build a [tier name] [weapon]", "forge a …", "inject … into Terraria". Do not trigger on general Terraria questions.
 
 ## 1 — Pipeline State
 
@@ -263,7 +267,7 @@ Use Opus model. Provide tools: Read.
 
 Execute these steps in order. Track `global_attempts_used` across the entire run.
 
-1. **Init.** Create `generation_id` as `datetime.now().strftime("%Y%m%d_%H%M%S")`. Set `global_attempts_used = 0`.
+1. **Init.** Read the weapon prompt: if invoked via `/forge <args>`, the args are the prompt; if invoked from natural language, the user's message is the prompt; if no prompt, ask for one. Create `generation_id` as `datetime.now().strftime("%Y%m%d_%H%M%S")`. Set `global_attempts_used = 0`.
 2. **Tier inference.** Apply Section 2 rules. Tell the user: "Building as Tier N because …"
 3. **Thesis.** Spawn 3.1. Present the 3 concepts to the user as a numbered list. Wait for their pick — unless they previously said "you choose" or "surprise me", in which case pick the most distinctive concept yourself and tell the user which.
 4. **Manifest.** Spawn 3.2 with the winning concept.
