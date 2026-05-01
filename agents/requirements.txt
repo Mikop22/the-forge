@@ -11,3 +11,6 @@ scikit-learn
 
 # Reference finder (browser-based image search)
 playwright
+
+# MCP SDK
+mcp>=1.0.0
