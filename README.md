@@ -305,3 +305,17 @@ the-forge/
 ## Reference-Aware Generation
 
 When a prompt references a known object, weapon, or character, the pipeline can fetch references and use them to guide sprite generation.
+
+## Architecture (post-MCP migration)
+
+The Forge runs as a Claude Code skill backed by a thin MCP server.
+
+- `.claude/skills/forge.md` — workflow, tier inference, all subagent prompts
+- `agents/mcp_server.py` — 4 execution tools: forge_compile, forge_generate_sprite, forge_inject, forge_status
+- `agents/core/` — shared compile / hjson / staging / critique modules
+- `agents/pixelsmith/` — FAL.ai sprite generation (unchanged)
+- `agents/gatekeeper/` — tModLoader build + atomic inject (unchanged from old pipeline core)
+- `mod/ForgeConnector/` — C# tModLoader watcher (unchanged)
+- `archive/` — preserved old Python orchestrator + Go TUI (no longer wired in)
+
+To use: open this repo in Claude Code and say "make a [weapon]". The skill drives Architect / Coder / Reviewer / Reference-Finder / Sprite-Judge subagents and orchestrates the MCP tools end-to-end.
