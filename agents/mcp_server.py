@@ -120,5 +120,68 @@ def forge_compile(cs_code: str, manifest: dict, generation_id: str) -> dict:
     return {"status": "error", "errors": errors, "artifact_path": ""}
 
 
+def _run_pixelsmith_audition(
+    *,
+    description: str,
+    size: list[int],
+    animation_frames: int,
+    kind: str,
+    reference_path: str | None,
+    generation_id: str,
+) -> list[str]:
+    """Bridge into the existing pixelsmith audition pipeline."""
+    from pixelsmith.pixelsmith import ArtistAgent
+    output_dir = STAGING_ROOT / generation_id / "sprites"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    agent = ArtistAgent(output_dir=output_dir)
+    result = agent.generate_audition_candidates(
+        description=description,
+        size=tuple(size),
+        animation_frames=animation_frames,
+        kind=kind,
+        reference_path=reference_path,
+    )
+    return result["candidate_paths"]
+
+
+@mcp.tool()
+def forge_generate_sprite(
+    description: str,
+    size: list[int],
+    animation_frames: int,
+    kind: str,
+    reference_path: str | None,
+    generation_id: str,
+) -> dict:
+    """Generate sprite candidates for the Sprite-Judge subagent to choose from.
+
+    Args:
+        description: Visual description from the manifest.
+        size: [width, height] in pixels.
+        animation_frames: 1 for static, N for animated sheets.
+        kind: "item" or "projectile".
+        reference_path: Local image path for img2img mode. None for text-to-image.
+        generation_id: Pipeline ID; sprites written under the staging dir.
+    """
+    if kind not in ("item", "projectile"):
+        return {
+            "status": "error",
+            "candidate_paths": [],
+            "error_message": f"invalid kind: {kind!r}",
+        }
+    try:
+        candidate_paths = _run_pixelsmith_audition(
+            description=description,
+            size=size,
+            animation_frames=animation_frames,
+            kind=kind,
+            reference_path=reference_path,
+            generation_id=generation_id,
+        )
+    except Exception as exc:
+        return {"status": "error", "candidate_paths": [], "error_message": str(exc)}
+    return {"status": "success", "candidate_paths": candidate_paths}
+
+
 if __name__ == "__main__":
     mcp.run()

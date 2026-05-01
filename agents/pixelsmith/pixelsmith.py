@@ -613,6 +613,74 @@ class ArtistAgent:
                 ),
             ).model_dump()
 
+    def generate_audition_candidates(
+        self,
+        *,
+        description: str,
+        size: tuple[int, int],
+        animation_frames: int,
+        kind: str,
+        reference_path: str | None,
+        n_candidates: int = 3,
+    ) -> dict:
+        """Return sprite candidates without selecting a winner.
+
+        The MCP layer surfaces these to a Sprite-Judge subagent which picks.
+        """
+        import shutil
+        import uuid
+
+        gen_mode = "image_to_image" if reference_path else "text_to_image"
+        slug = f"AudCand_{uuid.uuid4().hex[:8]}"
+
+        minimal_manifest: dict = {
+            "item_name": slug,
+            "type": "Weapon",
+            "sub_type": "Sword",
+            "visuals": {"description": description, "icon_size": list(size)},
+            "generation_mode": gen_mode,
+            "reference_image_url": reference_path or "",
+        }
+        if kind == "projectile":
+            anim = (
+                f"generated_frames:{animation_frames}"
+                if animation_frames > 1
+                else "static"
+            )
+            minimal_manifest["projectile_visuals"] = {
+                "description": description,
+                "icon_size": list(size),
+                "animation_tier": anim,
+            }
+
+        try:
+            parsed = PixelsmithInput.model_validate(minimal_manifest)
+        except Exception as exc:
+            return {"status": "error", "candidate_paths": [], "error_message": str(exc)}
+
+        candidate_paths: list[str] = []
+        for i in range(n_candidates):
+            try:
+                if kind == "projectile":
+                    out_path = self._generate_projectile(parsed, minimal_manifest)
+                else:
+                    out_path = self._generate_standard_item(parsed)
+
+                if out_path and Path(out_path).exists():
+                    cand_path = self.output_dir / f"candidate_{i:02d}.png"
+                    shutil.copy2(out_path, cand_path)
+                    candidate_paths.append(str(cand_path))
+            except Exception:
+                continue
+
+        if not candidate_paths:
+            return {
+                "status": "error",
+                "candidate_paths": [],
+                "error_message": "all candidates failed sprite generation",
+            }
+        return {"status": "success", "candidate_paths": candidate_paths}
+
     def generate_hidden_audition_finalists(
         self,
         *,
