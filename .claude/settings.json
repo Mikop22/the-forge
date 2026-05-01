@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "forge": {
+      "command": "python",
+      "args": ["agents/mcp_server.py"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
