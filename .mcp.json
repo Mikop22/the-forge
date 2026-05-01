@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "forge": {
+      "command": "/bin/bash",
+      "args": ["/Users/user/Desktop/the-forge/agents/mcp_server_start.sh"]
+    }
+  }
+}
