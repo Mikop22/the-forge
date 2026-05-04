@@ -71,13 +71,13 @@ flowchart LR
 
 ### Tier inference
 
-The skill picks the lowest tier that fits the prompt:
+The skill picks the lowest tier that fits the prompt. Higher tiers take longer and cost more, so the skill only escalates when the prompt asks for it.
 
-| Tier | Signal | What it builds |
-|---|---|---|
-| 1 | "simple", "basic", "starter", or just damage + use time | `SetDefaults` + `AddRecipes` |
-| 2 | One special mechanic (homing, piercing, on-hit buff/debuff, bouncing) | Tier 1 + 1-2 mechanics atoms |
-| 3 | Charge phases, multi-projectile payoff, sweep/beam, "void", "forbidden" | Full `Projectile.ai[]` state machine, secondary spawns, beam line collision |
+**Tier 1: basic weapons.** A regular sword, bow, or pistol. It hits things. Damage and swing speed only, nothing fancy. Triggered by words like "simple", "basic", "starter", or any prompt that just describes a weapon without special behavior.
+
+**Tier 2: one trick.** The weapon has a single mechanic that makes it interesting. A bow whose arrows home in on enemies. A sword that sets things on fire. A staff whose projectiles bounce off walls. One special behavior on top of a normal weapon.
+
+**Tier 3: spectacles.** The weapon does something dramatic that unfolds over time, or fires multiple things at once. Charging up before releasing a beam. Summoning a swarm of orbiting projectiles. Sweeping arcs, void rifts, multi-stage transformations. Anything that needs more than "the projectile flies forward and hits things" gets bumped here.
 
 ## Using `/forge`
 
@@ -106,7 +106,7 @@ If a candidate fails compile or the deterministic reviewer, the skill respawns t
 - Terraria with **tModLoader** installed
 - **Python** `3.12+`
 - **Claude Code** (or another MCP-capable IDE)
-- API keys: `OPENAI_API_KEY`, `FAL_KEY`
+- API keys: `ANTHROPIC_API_KEY`, `FAL_KEY`
 
 ### 1. Clone and install Python deps
 
@@ -123,12 +123,12 @@ The MCP server wrapper at `agents/mcp_server_start.sh` runs out of `agents/.venv
 
 ```bash
 cp agents/.env.example agents/.env
-# edit and fill in OPENAI_API_KEY and FAL_KEY
+# edit and fill in ANTHROPIC_API_KEY and FAL_KEY
 ```
 
 | Key | Use |
 |-----|-----|
-| `OPENAI_API_KEY` | Backup LLM calls (most agent traffic now goes through Claude) |
+| `ANTHROPIC_API_KEY` | Description enrichment and audition judging inside the Pixelsmith pipeline. The skill itself uses your IDE's existing Claude session. |
 | `FAL_KEY` | Pixelsmith image generation (`forge_generate_sprite`) |
 
 ### 3. Pixelsmith weights

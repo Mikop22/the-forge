@@ -1,5 +1,4 @@
-langchain-core>=0.3
-langchain-openai>=0.3
+anthropic>=0.40
 pydantic>=2.0
 python-dotenv
 watchdog>=3.0

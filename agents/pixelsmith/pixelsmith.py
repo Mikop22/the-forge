@@ -334,8 +334,7 @@ def _enrich_description(
     color_palette: list[str] | None = None,
 ) -> str:
     """Expand a terse visual description into a part-by-part prompt for FLUX."""
-    from langchain_core.messages import HumanMessage, SystemMessage
-    from langchain_openai import ChatOpenAI
+    import anthropic
 
     palette_str = ", ".join(color_palette) if color_palette else ""
 
@@ -343,12 +342,12 @@ def _enrich_description(
         "You are a pixel art art director for a Terraria-style game. "
         "Expand the given weapon description into a concise visual prompt for an image generation model.\n\n"
         "Rules:\n"
-        "- Write a single FLOWING SENTENCE — no bullet points, no colons, no semicolons\n"
-        "- Name each visible weapon part (blade, edge, crossguard, handle, pommel) and give each a color and material\n"
-        "- Add ONE defining surface detail implied by the theme (crystal facets, frost cracks, rune carvings, lava veins, etc)\n"
-        "- Use plain color words — never hex codes\n"
-        "- Do NOT mention backgrounds, scenes, environments, or story\n"
-        "- Under 45 words. Output ONLY the sentence — no preamble, no label, no quotes."
+        "- Write a single FLOWING SENTENCE. No bullet points, no colons, no semicolons.\n"
+        "- Name each visible weapon part (blade, edge, crossguard, handle, pommel) and give each a color and material.\n"
+        "- Add ONE defining surface detail implied by the theme (crystal facets, frost cracks, rune carvings, lava veins, etc).\n"
+        "- Use plain color words. Never hex codes.\n"
+        "- Do NOT mention backgrounds, scenes, environments, or story.\n"
+        "- Under 45 words. Output ONLY the sentence. No preamble, no label, no quotes."
     )
 
     user_msg = (
@@ -359,9 +358,15 @@ def _enrich_description(
     )
 
     try:
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.7, timeout=30)
-        result = llm.invoke([SystemMessage(content=system), HumanMessage(content=user_msg)])
-        enriched = result.content.strip()
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=200,
+            temperature=0.7,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        enriched = message.content[0].text.strip()
         logger.info("Enriched description: %s", enriched)
         return enriched
     except Exception as exc:
@@ -385,48 +390,52 @@ def _describe_shape_with_colors(ref_url: str, color_palette: str) -> str:
     """LLM describes weapon shape and maps extracted colors to parts."""
     import base64
     import urllib.request
-    from langchain_core.messages import HumanMessage, SystemMessage
-    from langchain_openai import ChatOpenAI
+    import anthropic
 
     req = urllib.request.Request(ref_url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = resp.read()
     b64 = base64.b64encode(data).decode("ascii")
 
-    llm = ChatOpenAI(model="gpt-4o", timeout=60)
-    messages = [
-        SystemMessage(
-            content=(
-                "This reference image shows a weapon we want to turn into a single pixel art sprite. "
-                "Describe ONLY the main unsheathed weapon — ignore scabbards, sheaths, duplicates, "
-                "characters, backgrounds, or any other objects in the image. "
-                "We are making ONE sprite of ONE weapon.\n\n"
-                "We extracted these colors from the image using computer vision:\n"
-                f"  {color_palette}\n\n"
-                "Your job: describe the weapon in under 25 words, assigning the extracted colors "
-                "to the correct weapon parts (blade, edge, guard, handle, pommel, glow, etc). "
-                "Example: 'slightly curved black blade with bright green glowing edge, gold crossguard, "
-                "dark brown wrapped handle with gold pommel'"
-            )
-        ),
-        HumanMessage(
-            content=[
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{b64}",
-                        "detail": "high",
+    system = (
+        "This reference image shows a weapon we want to turn into a single pixel art sprite. "
+        "Describe ONLY the main unsheathed weapon. Ignore scabbards, sheaths, duplicates, "
+        "characters, backgrounds, or any other objects in the image. "
+        "We are making ONE sprite of ONE weapon.\n\n"
+        "We extracted these colors from the image using computer vision:\n"
+        f"  {color_palette}\n\n"
+        "Your job: describe the weapon in under 25 words, assigning the extracted colors "
+        "to the correct weapon parts (blade, edge, guard, handle, pommel, glow, etc). "
+        "Example: 'slightly curved black blade with bright green glowing edge, gold crossguard, "
+        "dark brown wrapped handle with gold pommel'"
+    )
+
+    client = anthropic.Anthropic()
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=200,
+        system=system,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": b64,
+                        },
                     },
-                },
-                {
-                    "type": "text",
-                    "text": "Describe this weapon with the extracted colors placed on the correct parts.",
-                },
-            ]
-        ),
-    ]
-    result = llm.invoke(messages)
-    return result.content.strip()
+                    {
+                        "type": "text",
+                        "text": "Describe this weapon with the extracted colors placed on the correct parts.",
+                    },
+                ],
+            }
+        ],
+    )
+    return message.content[0].text.strip()
 
 
 def build_img2img_prompt(

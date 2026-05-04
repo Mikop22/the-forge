@@ -1,4 +1,4 @@
-"""The Forge MCP server — exposes 4 execution tools to Claude Code."""
+"""The Forge MCP server. Exposes 4 execution tools to Claude Code."""
 from __future__ import annotations
 
 import json
@@ -8,6 +8,10 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 from mcp.server.fastmcp import FastMCP
 

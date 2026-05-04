@@ -7,31 +7,12 @@ import logging
 import urllib.request
 from io import BytesIO
 
+import anthropic
 from PIL import Image
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-
-class _VariantSelection(BaseModel):
-    index: int = Field(
-        description="1-based index of the best candidate (e.g. 1, 2, or 3)"
-    )
-
-
-class _SpriteCandidateScore(BaseModel):
-    motif_strength: float = Field(ge=0.0, le=10.0)
-    family_coherence: float = Field(ge=0.0, le=10.0)
-    notes: str = ""
-
-
-class _SurvivorJudgement(BaseModel):
-    winner_index: int = Field(
-        description="0-based winner index among surviving candidates"
-    )
-    scores: list[_SpriteCandidateScore] = Field(default_factory=list)
+_CLAUDE_VISION_MODEL = "claude-sonnet-4-6"
 
 
 _SELECTOR_SYSTEM = """\
@@ -48,23 +29,61 @@ Consider:
 - Handle length and style
 - Overall silhouette similarity to the reference
 
-All candidates should have similar colors. Focus on SHAPE quality.
-
-Return the number of the best candidate (1 through {n}) in the `index` field."""
+All candidates should have similar colors. Focus on SHAPE quality."""
 
 
 _AUDITION_SYSTEM = """\
 You are judging hidden Pixelsmith audition survivors.
 
 Score each surviving sprite candidate on:
-- motif_strength: how strongly the sprite expresses the requested fantasy and signature motifs
-- family_coherence: how well the sprite fits the same visual family and art direction
+- motif_strength: how strongly the sprite expresses the requested fantasy and signature motifs (0.0 to 10.0)
+- family_coherence: how well the sprite fits the same visual family and art direction (0.0 to 10.0)
 
-Then choose the best surviving candidate using those scores.
+Then choose the best surviving candidate using those scores."""
 
-Return:
-- `winner_index`: the 0-based index of the winner
-- `scores`: one score object per candidate, in order"""
+
+_SELECTOR_TOOL = {
+    "name": "report_best_variant",
+    "description": "Report which candidate index is the best match.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "index": {
+                "type": "integer",
+                "description": "1-based index of the best candidate",
+            },
+        },
+        "required": ["index"],
+    },
+}
+
+
+_AUDITION_TOOL = {
+    "name": "report_audition_result",
+    "description": "Report the winner and per-candidate scores.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "winner_index": {
+                "type": "integer",
+                "description": "0-based winner index among surviving candidates",
+            },
+            "scores": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "motif_strength": {"type": "number"},
+                        "family_coherence": {"type": "number"},
+                        "notes": {"type": "string"},
+                    },
+                    "required": ["motif_strength", "family_coherence"],
+                },
+            },
+        },
+        "required": ["winner_index", "scores"],
+    },
+}
 
 
 def _image_to_b64(img: Image.Image) -> str:
@@ -79,16 +98,27 @@ def _url_to_b64(url: str) -> str:
         return base64.b64encode(resp.read()).decode("ascii")
 
 
+def _image_block(b64: str) -> dict:
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": b64},
+    }
+
+
+def _extract_tool_input(message: anthropic.types.Message, tool_name: str) -> dict:
+    for block in message.content:
+        if block.type == "tool_use" and block.name == tool_name:
+            return dict(block.input)
+    raise RuntimeError(f"Claude did not return a {tool_name} tool_use block")
+
+
 def select_best_variant(
     candidates: list[Image.Image],
     reference_url: str,
     *,
-    model: str = "gpt-4o",
+    model: str = _CLAUDE_VISION_MODEL,
 ) -> int:
-    """Pick the best candidate index (0-based) by comparing to reference.
-
-    Returns the index of the best candidate in the list.
-    """
+    """Pick the best candidate index (0-based) by comparing to reference."""
     n = len(candidates)
     if n <= 1:
         return 0
@@ -99,36 +129,31 @@ def select_best_variant(
 
     content: list[dict] = [
         {"type": "text", "text": "Reference image:"},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{ref_b64}", "detail": "high"},
-        },
+        _image_block(ref_b64),
     ]
-
     for i, img in enumerate(candidates, 1):
-        b64 = _image_to_b64(img)
         content.append({"type": "text", "text": f"Candidate {i}:"})
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
-            }
-        )
+        content.append(_image_block(_image_to_b64(img)))
 
-    llm = ChatOpenAI(model=model, timeout=60).with_structured_output(_VariantSelection)
-    messages = [
-        SystemMessage(content=_SELECTOR_SYSTEM.format(n=n)),
-        HumanMessage(content=content),
-    ]
+    client = anthropic.Anthropic()
+    message = client.messages.create(
+        model=model,
+        max_tokens=512,
+        system=_SELECTOR_SYSTEM.format(n=n),
+        tools=[_SELECTOR_TOOL],
+        tool_choice={"type": "tool", "name": "report_best_variant"},
+        messages=[{"role": "user", "content": content}],
+    )
 
-    result: _VariantSelection = llm.invoke(messages)
-    if 1 <= result.index <= n:
-        logger.info("LLM selected candidate %d of %d", result.index, n)
-        return result.index - 1
+    payload = _extract_tool_input(message, "report_best_variant")
+    raw_index = int(payload.get("index", 1))
+    if 1 <= raw_index <= n:
+        logger.info("Claude selected candidate %d of %d", raw_index, n)
+        return raw_index - 1
 
     logger.warning(
-        "LLM returned out-of-range index %d (n=%d), defaulting to candidate 1",
-        result.index,
+        "Claude returned out-of-range index %d (n=%d), defaulting to candidate 1",
+        raw_index,
         n,
     )
     return 0
@@ -139,7 +164,7 @@ def judge_surviving_candidates(
     *,
     prompt: str,
     family_hint: str = "",
-    model: str = "gpt-4o",
+    model: str = _CLAUDE_VISION_MODEL,
 ) -> dict[str, object]:
     """Judge surviving candidates on motif strength and family coherence."""
     n = len(candidates)
@@ -167,27 +192,34 @@ def judge_surviving_candidates(
             ),
         }
     ]
-
     for i, img in enumerate(candidates):
-        b64 = _image_to_b64(img)
         content.append({"type": "text", "text": f"Candidate {i}:"})
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
-            }
-        )
+        content.append(_image_block(_image_to_b64(img)))
 
-    llm = ChatOpenAI(model=model, timeout=60).with_structured_output(_SurvivorJudgement)
-    result: _SurvivorJudgement = llm.invoke(
-        [
-            SystemMessage(content=_AUDITION_SYSTEM),
-            HumanMessage(content=content),
-        ]
+    client = anthropic.Anthropic()
+    message = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=_AUDITION_SYSTEM,
+        tools=[_AUDITION_TOOL],
+        tool_choice={"type": "tool", "name": "report_audition_result"},
+        messages=[{"role": "user", "content": content}],
     )
 
-    winner_index = result.winner_index if 0 <= result.winner_index < n else 0
-    scores = [score.model_dump() for score in result.scores[:n]]
+    payload = _extract_tool_input(message, "report_audition_result")
+    raw_winner = int(payload.get("winner_index", 0))
+    winner_index = raw_winner if 0 <= raw_winner < n else 0
+
+    raw_scores = payload.get("scores") or []
+    scores: list[dict] = []
+    for entry in raw_scores[:n]:
+        scores.append(
+            {
+                "motif_strength": float(entry.get("motif_strength", 0.0)),
+                "family_coherence": float(entry.get("family_coherence", 0.0)),
+                "notes": str(entry.get("notes", "")),
+            }
+        )
     while len(scores) < n:
         scores.append(
             {
@@ -196,4 +228,5 @@ def judge_surviving_candidates(
                 "notes": "missing score from judge",
             }
         )
+
     return {"winner_index": winner_index, "scores": scores}
