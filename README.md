@@ -1,12 +1,6 @@
 
 # The Forge
-### Describe an item, The Forge can conceptualize it, generate art, make novel animations, write the code and inject the item, *without reloading the game*.
-
-*A Claude Code skill that drives a local MCP server, which compiles, generates sprites, and live-injects items into Terraria.*
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
-</p>
+**A Claude Code skill that drives a local MCP server, which compiles, generates sprites, and live-injects items into Terraria.**
 
 *"a staff that shoots nyan-cat"*
 
