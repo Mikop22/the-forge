@@ -2,7 +2,7 @@
 # The Forge
 ### Describe an item, The Forge can conceptualize it, generate art, make novel animations, write the code and inject the item, *without reloading the game*.
 
-*An IDE skill (Claude Code) drives a local MCP server, which compiles, generates sprites, and live-injects items into a running tModLoader instance.*
+*A Claude Code skill that drives a local MCP server, which compiles, generates sprites, and live-injects items into Terraria.*
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/5c2b3eab-8aeb-494f-8911-21628cff59c3" width="688" />
@@ -56,7 +56,7 @@ flowchart LR
     style GAME fill:#065f46,color:#fff,stroke:#022c22,stroke-width:2px
 ```
 
-The IDE skill at `.claude/skills/forge.md` runs the orchestration. It picks a tier from the prompt, dispatches subagents with the appropriate model for each role, calls four MCP tools, and `ForgeConnector` (a tModLoader mod watching `forge_inject.json`) drops the item into your running game.
+`.claude/skills/forge.md` runs the orchestration. It picks a tier from the prompt, dispatches subagents with the appropriate model for each role, calls four MCP tools, and `ForgeConnector` (a tModLoader mod watching `forge_inject.json`) drops the item into your running game.
 
 ### Subagent model assignments
 
@@ -86,7 +86,7 @@ Once the MCP server is running and the skill is loaded:
 ```
 /forge a void pistol that charges before firing
 /forge simple starter sword
-/forge tier 2 homing staff
+/forge a homing missle staff
 ```
 
 The skill will:
