@@ -370,14 +370,16 @@ def build_img2img_prompt(
     reference_url: str,
     orientation: str = DEFAULT_ORIENTATION,
 ) -> str:
-    """Build an img2img prompt by combining LLM shape description with extracted accent colors.
+    """Build an img2img prompt by combining the manifest description with
+    the reference image's extracted color palette.
 
     1. Downloads reference image
     2. Extracts dominant colors via k-means
-    3. LLM describes weapon shape and assigns colors to parts
-    4. Injects any accent colors the LLM missed
+    3. Injects accent colors not already present in the base description
+       as an inline "with X glowing edge" clause (stronger steering than a
+       parenthetical palette tag)
+    4. Appends the full palette so FLUX has the complete color set
     """
-    # Extract colors from reference
     ref_img = _download_reference(reference_url)
     colors = extract_colors(ref_img)
     palette_str = get_color_palette_string(colors)
@@ -386,16 +388,17 @@ def build_img2img_prompt(
     logger.info("Extracted color palette: %s", palette_str)
     logger.info("Accent colors: %s", accent_colors)
 
-    description = _describe_shape_with_colors(base_description, palette_str)
-    logger.info("img2img description: %s", description)
-
-    # Check if any accent colors are missing from description — inject them
-    desc_lower = description.lower()
-    missing = [c for c in accent_colors if c.lower() not in desc_lower and c != "gold"]
+    base_lower = base_description.lower()
+    missing = [
+        c for c in accent_colors if c.lower() not in base_lower and c != "gold"
+    ]
     accent_clause = ""
     if missing:
         accent_clause = f" with {' and '.join(missing)} glowing edge"
         logger.info("Injecting missing accent colors: %s", missing)
+
+    description = _describe_shape_with_colors(base_description, palette_str)
+    logger.info("img2img description: %s", description)
 
     return IMG2IMG_TEMPLATE.format(
         description=description,

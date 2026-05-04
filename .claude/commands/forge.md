@@ -93,6 +93,7 @@ REQUIRED FIELDS:
 - content_type, type, sub_type
 - stats: {damage, knockback, crit_chance, use_time, auto_reuse, rarity}
 - visuals: {color_palette, description, icon_size: [int, int]}
+  - description MUST be a single flowing sentence, 30 to 45 words, naming each visible weapon part (blade, edge, crossguard, handle, pommel, etc.) with a color and material, plus ONE defining surface detail implied by the theme (crystal facets, frost cracks, rune carvings, lava veins, etc.). Use plain color words, never hex codes. Do not mention backgrounds, scenes, or story. Example: "slightly curved obsidian blade with violet glowing runes along the edge, dark iron crossguard, leather-wrapped grip, faceted amethyst pommel, surface threaded with hairline cracks of starlight." This text feeds FLUX directly; vague descriptions degrade sprite quality.
 - mechanics: {shoot_projectile?, on_hit_buff?, custom_projectile, shot_style, crafting_material, crafting_cost, crafting_tile}
 - references: {item: {needed: bool}, projectile: {needed: bool}}  ← set true ONLY when the weapon concept is based on a specific real-world or copyrighted subject that a diffusion model cannot generate from text alone — e.g. a named anime character's sword, a specific sports team logo, a known internet meme character (Nyan Cat), a real-world historical artefact with a distinct silhouette. Generic fantasy weapons (swords, wands, bows, staffs, orbs, guns) are ALWAYS false. When in doubt, default to false.
 
