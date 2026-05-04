@@ -100,7 +100,7 @@ If a candidate fails compile or the deterministic reviewer, the skill respawns t
 - Terraria with **tModLoader** installed
 - **Python** `3.12+`
 - **Claude Code** (or another MCP-capable IDE)
-- API keys: `ANTHROPIC_API_KEY`, `FAL_KEY`
+- API key: `FAL_KEY` (the skill itself runs on your IDE's Claude session)
 
 ### 1. Clone and install Python deps
 
@@ -117,13 +117,14 @@ The MCP server wrapper at `agents/mcp_server_start.sh` runs out of `agents/.venv
 
 ```bash
 cp agents/.env.example agents/.env
-# edit and fill in ANTHROPIC_API_KEY and FAL_KEY
+# edit and fill in FAL_KEY
 ```
 
 | Key | Use |
 |-----|-----|
-| `ANTHROPIC_API_KEY` | Description enrichment and audition judging inside the Pixelsmith pipeline. The skill itself uses your IDE's existing Claude session. |
 | `FAL_KEY` | Pixelsmith image generation (`forge_generate_sprite`) |
+
+All LLM calls (concept generation, codegen, review, sprite picking) flow through the forge skill in your IDE, so they bill against your existing Claude Code session. The MCP server itself does not call any LLM.
 
 ### 3. Pixelsmith weights
 

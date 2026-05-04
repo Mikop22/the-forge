@@ -40,10 +40,6 @@ try:  # Prefer package imports to avoid cross-agent module name collisions.
         PixelsmithOutput,
     )
     from pixelsmith.sprite_gates import evaluate_sprite_gates
-    from pixelsmith.variant_selector import (
-        judge_surviving_candidates,
-        select_best_variant,
-    )
 except ImportError:  # Fallback for direct script execution from the folder.
     from core.weapon_lab_archive import WeaponLabArchive
     from core.weapon_lab_models import WeaponThesis
@@ -67,7 +63,6 @@ except ImportError:  # Fallback for direct script execution from the folder.
         PixelsmithOutput,
     )
     from sprite_gates import evaluate_sprite_gates
-    from variant_selector import judge_surviving_candidates, select_best_variant
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +87,7 @@ POSITIVE_TEMPLATE = (
 )
 LORA_TRIGGER_WORD = "terraria style"
 LORA_SCALE = 0.65
-IMG2IMG_VARIANTS = 4
+IMG2IMG_VARIANTS = 1
 HIDDEN_AUDITION_MIN_VARIANTS = 2
 
 # System prompt baked into the positive prompt preamble.
@@ -333,45 +328,17 @@ def _enrich_description(
     sub_type: str = "",
     color_palette: list[str] | None = None,
 ) -> str:
-    """Expand a terse visual description into a part-by-part prompt for FLUX."""
-    import anthropic
+    """Append the color palette to the description if present.
 
-    palette_str = ", ".join(color_palette) if color_palette else ""
-
-    system = (
-        "You are a pixel art art director for a Terraria-style game. "
-        "Expand the given weapon description into a concise visual prompt for an image generation model.\n\n"
-        "Rules:\n"
-        "- Write a single FLOWING SENTENCE. No bullet points, no colons, no semicolons.\n"
-        "- Name each visible weapon part (blade, edge, crossguard, handle, pommel) and give each a color and material.\n"
-        "- Add ONE defining surface detail implied by the theme (crystal facets, frost cracks, rune carvings, lava veins, etc).\n"
-        "- Use plain color words. Never hex codes.\n"
-        "- Do NOT mention backgrounds, scenes, environments, or story.\n"
-        "- Under 45 words. Output ONLY the sentence. No preamble, no label, no quotes."
-    )
-
-    user_msg = (
-        f"Item: {item_name}\n"
-        f"Type: {item_type} / {sub_type}\n"
-        f"Description: {description}\n"
-        f"Palette: {palette_str}"
-    )
-
-    try:
-        client = anthropic.Anthropic()
-        message = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=200,
-            temperature=0.7,
-            system=system,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-        enriched = message.content[0].text.strip()
-        logger.info("Enriched description: %s", enriched)
-        return enriched
-    except Exception as exc:
-        logger.warning("Description enrichment failed (%s); using original", exc)
-        return description
+    The description is expected to already be detailed enough for FLUX. The
+    Architect-Manifest subagent in the forge skill is responsible for
+    producing a part-by-part visual description before calling
+    ``forge_generate_sprite``.
+    """
+    if color_palette:
+        palette_str = ", ".join(color_palette)
+        return f"{description} (palette: {palette_str})"
+    return description
 
 
 def _download_reference(url: str) -> Image.Image:
@@ -386,56 +353,16 @@ def _download_reference(url: str) -> Image.Image:
     return Image.open(BytesIO(data)).convert("RGBA")
 
 
-def _describe_shape_with_colors(ref_url: str, color_palette: str) -> str:
-    """LLM describes weapon shape and maps extracted colors to parts."""
-    import base64
-    import urllib.request
-    import anthropic
+def _describe_shape_with_colors(base_description: str, color_palette: str) -> str:
+    """Combine the manifest's base description with the extracted color palette.
 
-    req = urllib.request.Request(ref_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = resp.read()
-    b64 = base64.b64encode(data).decode("ascii")
-
-    system = (
-        "This reference image shows a weapon we want to turn into a single pixel art sprite. "
-        "Describe ONLY the main unsheathed weapon. Ignore scabbards, sheaths, duplicates, "
-        "characters, backgrounds, or any other objects in the image. "
-        "We are making ONE sprite of ONE weapon.\n\n"
-        "We extracted these colors from the image using computer vision:\n"
-        f"  {color_palette}\n\n"
-        "Your job: describe the weapon in under 25 words, assigning the extracted colors "
-        "to the correct weapon parts (blade, edge, guard, handle, pommel, glow, etc). "
-        "Example: 'slightly curved black blade with bright green glowing edge, gold crossguard, "
-        "dark brown wrapped handle with gold pommel'"
-    )
-
-    client = anthropic.Anthropic()
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=200,
-        system=system,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": "Describe this weapon with the extracted colors placed on the correct parts.",
-                    },
-                ],
-            }
-        ],
-    )
-    return message.content[0].text.strip()
+    Previously this called a vision LLM to map colors onto weapon parts. The
+    Architect-Manifest description already names the parts; we just append
+    the palette so FLUX knows which colors to honor.
+    """
+    if color_palette:
+        return f"{base_description} (palette: {color_palette})"
+    return base_description
 
 
 def build_img2img_prompt(
@@ -459,9 +386,8 @@ def build_img2img_prompt(
     logger.info("Extracted color palette: %s", palette_str)
     logger.info("Accent colors: %s", accent_colors)
 
-    # LLM describes shape with color placement
-    description = _describe_shape_with_colors(reference_url, palette_str)
-    logger.info("LLM img2img description: %s", description)
+    description = _describe_shape_with_colors(base_description, palette_str)
+    logger.info("img2img description: %s", description)
 
     # Check if any accent colors are missing from description — inject them
     desc_lower = description.lower()
@@ -884,21 +810,14 @@ class ArtistAgent:
             )
             return None
 
-        judged = judge_surviving_candidates(
-            [candidate["image"] for candidate in surviving_candidates],
-            prompt=prompt,
-            family_hint=parsed.visuals.description,
-        )
-        winner_index = int(judged.get("winner_index", 0))
-        if winner_index < 0 or winner_index >= len(surviving_candidates):
-            winner_index = 0
-
-        scores = judged.get("scores", [])
-        for index, candidate in enumerate(surviving_candidates):
-            score = scores[index] if index < len(scores) else {}
-            candidate["motif_strength"] = float(score.get("motif_strength", 0.0))
-            candidate["family_coherence"] = float(score.get("family_coherence", 0.0))
-            candidate["judge_notes"] = str(score.get("notes", ""))
+        # Audition judging at the skill layer (Sprite-Judge subagent).
+        # This legacy path keeps deterministic placeholder scores so the
+        # output schema stays valid for any downstream consumer.
+        winner_index = 0
+        for candidate in surviving_candidates:
+            candidate["motif_strength"] = 0.0
+            candidate["family_coherence"] = 0.0
+            candidate["judge_notes"] = ""
 
         winner = surviving_candidates[winner_index]
         for candidate in surviving_candidates:
@@ -1065,31 +984,16 @@ class ArtistAgent:
         endpoint: str,
         n_variants: int = 1,
     ) -> Image.Image:
-        """Generate n_variants images and pick the best one (or just one if text-to-image)."""
-        if n_variants <= 1 or generation_mode != "image_to_image" or not reference_url:
-            return self._run_pipeline(
-                prompt,
-                generation_mode=generation_mode,
-                reference_image_url=reference_url,
-                endpoint=endpoint,
-            )
-
-        logger.info("Generating %d variants for best-of-N selection", n_variants)
-        candidates = []
-        for i in range(n_variants):
-            img = self._run_pipeline(
-                prompt,
-                generation_mode=generation_mode,
-                reference_image_url=reference_url,
-                endpoint=endpoint,
-            )
-            candidates.append(img)
-            logger.info("Generated variant %d/%d", i + 1, n_variants)
-
-        best_idx = select_best_variant(candidates, reference_url)
-        logger.info("Selected variant %d as best match", best_idx + 1)
-
-        return candidates[best_idx]
+        """Generate one image. The outer audition (3 candidates returned to
+        the Sprite-Judge subagent) provides best-of-N selection at the
+        skill layer, so this stays single-shot."""
+        del n_variants  # kept for call-site compatibility
+        return self._run_pipeline(
+            prompt,
+            generation_mode=generation_mode,
+            reference_image_url=reference_url,
+            endpoint=endpoint,
+        )
 
     @staticmethod
     def _require_readable_sprite(image: Image.Image, *, sprite_kind: str) -> None:
