@@ -1,14 +1,29 @@
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { fal } from "@fal-ai/client";
+const require = createRequire(import.meta.url);
+
+async function loadFalClient() {
+  const depsDir = process.env.TFORGE_NODE_DEPS_DIR;
+  const modulePath = depsDir
+    ? require.resolve("@fal-ai/client", { paths: [depsDir] })
+    : "@fal-ai/client";
+  const specifier = path.isAbsolute(modulePath)
+    ? pathToFileURL(modulePath).href
+    : modulePath;
+  return import(specifier);
+}
+
+const { fal } = await loadFalClient();
 
 // Cache uploaded LoRA URLs to avoid re-uploading every call.
 // Key: absolute local path → Value: fal storage URL
 const LORA_CACHE_FILE = path.join(
-  path.dirname(new URL(import.meta.url).pathname),
-  ".lora_url_cache.json",
+  process.env.TFORGE_LORA_CACHE_FILE ||
+    path.join(path.dirname(new URL(import.meta.url).pathname), ".lora_url_cache.json"),
 );
 
 async function loadLoraCache() {
@@ -21,6 +36,7 @@ async function loadLoraCache() {
 }
 
 async function saveLoraCache(cache) {
+  await fs.mkdir(path.dirname(LORA_CACHE_FILE), { recursive: true });
   await fs.writeFile(LORA_CACHE_FILE, JSON.stringify(cache, null, 2));
 }
 

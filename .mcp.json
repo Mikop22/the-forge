@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "forge": {
-      "command": "/bin/bash",
-      "args": ["/Users/user/Desktop/the-forge/agents/mcp_server_start.sh"]
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/tforge-mcp-start",
+      "args": []
     }
   }
 }

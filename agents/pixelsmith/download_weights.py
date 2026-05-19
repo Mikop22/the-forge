@@ -9,6 +9,7 @@ Set the Google Drive file IDs below (from the share link) before running.
 """
 
 import pathlib
+import os
 import sys
 import urllib.request
 
@@ -18,7 +19,9 @@ WEIGHTS = {
     "terraria_weights.safetensors": "1NHyfX2AlNxebCByd1jSvMZzLnMCzGqnv",  # from share link
 }
 
-DEST_DIR = pathlib.Path(__file__).parent
+DEST_DIR = pathlib.Path(
+    os.environ.get("TFORGE_PIXELSMITH_WEIGHTS_DIR", pathlib.Path(__file__).parent)
+)
 # Direct download URL for Google Drive (no confirmation page for small files)
 BASE_URL = "https://drive.google.com/uc?export=download&id={}"
 CHUNK_SIZE = 1024 * 1024  # 1 MiB

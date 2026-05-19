@@ -74,8 +74,9 @@ logger = logging.getLogger(__name__)
 FAL_MODEL_ENDPOINT = "fal-ai/flux-2/klein/9b/base/lora"
 FAL_IMG2IMG_ENDPOINT = "fal-ai/flux-2/klein/9b/base/edit/lora"
 NODE_RUNNER = Path(__file__).resolve().parent / "fal_flux2_runner.mjs"
-DEFAULT_LORA_PATH = str(
-    Path(__file__).resolve().parent / "terraria_weights.safetensors"
+DEFAULT_LORA_PATH = os.environ.get(
+    "TFORGE_PIXELSMITH_WEIGHTS_PATH",
+    str(Path(__file__).resolve().parent / "terraria_weights.safetensors"),
 )
 GENERATION_SIZE = {"width": 512, "height": 512}
 
@@ -211,7 +212,7 @@ def friendly_generation_error(raw: str) -> str:
             return _GATE_MESSAGES[gate]
         return f"Sprite failed quality check ({gate}) — try rephrasing the description"
     if "fal_key" in lower or "fal_api_key" in lower:
-        return "FAL API key missing — set FAL_KEY in your .env file"
+        return "FAL API key missing — configure the Tforge plugin FAL API key, or set FAL_KEY for repo development"
     if "timeout" in lower or "timed out" in lower:
         return "Generation timed out — the image service may be slow, try again"
     return raw

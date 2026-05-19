@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+. "$script_dir/tforge-lib.sh"
+plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$script_dir/.." && pwd)}"
+plugin_data="${CLAUDE_PLUGIN_DATA:-}"
+set_runtime_paths "$plugin_root" "$plugin_data"
+
+if [ -n "${CLAUDE_PLUGIN_OPTION_fal_key:-}" ]; then
+  export FAL_KEY="$CLAUDE_PLUGIN_OPTION_fal_key"
+fi
+
+if [ -n "$plugin_data" ]; then
+  venv_dir="$plugin_data/venv"
+else
+  venv_dir="$plugin_root/agents/.venv"
+fi
+
+python_bin="$(resolve_venv_python "$venv_dir" || true)"
+
+if [ -z "$python_bin" ]; then
+  printf '%s\n' "Tforge MCP server is not set up yet." >&2
+  printf '%s\n' "Run /tforge:setup in Claude Code, then /reload-plugins or restart Claude Code." >&2
+  exit 78
+fi
+
+cd "$plugin_root/agents"
+exec "$python_bin" -u mcp_server.py

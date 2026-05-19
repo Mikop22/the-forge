@@ -1,3 +1,3 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-exec .venv/bin/python3.12 -u mcp_server.py
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec "$script_dir/../scripts/tforge-mcp-start"

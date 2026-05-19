@@ -1,0 +1,27 @@
+{
+  "name": "tforge",
+  "displayName": "Tforge",
+  "version": "0.1.0",
+  "description": "Generate, compile, sprite, and live-inject custom Terraria weapons from Claude Code.",
+  "repository": "https://github.com/Mikop22/the-forge",
+  "commands": [
+    "./commands/",
+    "./.claude/commands/forge.md"
+  ],
+  "mcpServers": "./.mcp.json",
+  "keywords": [
+    "terraria",
+    "tmodloader",
+    "mcp",
+    "pixel-art"
+  ],
+  "userConfig": {
+    "fal_key": {
+      "type": "string",
+      "title": "FAL API key",
+      "description": "fal.ai API key used by Pixelsmith to generate Terraria item and projectile sprites.",
+      "sensitive": true,
+      "required": false
+    }
+  }
+}

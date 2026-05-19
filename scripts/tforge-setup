@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+say() {
+  printf '%s\n' "$*"
+}
+
+warn() {
+  printf 'WARN: %s\n' "$*" >&2
+}
+
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+. "$script_dir/tforge-lib.sh"
+plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$script_dir/.." && pwd)}"
+plugin_data="${CLAUDE_PLUGIN_DATA:-}"
+set_runtime_paths "$plugin_root" "$plugin_data"
+
+resolve_python() {
+  if [ -n "${PYTHON:-}" ]; then
+    printf '%s\n' "$PYTHON"
+    return
+  fi
+  for candidate in python3.12 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+}
+
+resolve_mod_sources() {
+  if [ -n "${FORGE_MOD_SOURCES_DIR:-}" ]; then
+    printf '%s\n' "$FORGE_MOD_SOURCES_DIR"
+    return
+  fi
+
+  case "$(uname -s)" in
+    Darwin)
+      printf '%s\n' "$HOME/Library/Application Support/Terraria/tModLoader/ModSources"
+      ;;
+    Linux)
+      printf '%s\n' "$HOME/.local/share/Terraria/tModLoader/ModSources"
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      printf '%s\n' "${USERPROFILE:-$HOME}/Documents/My Games/Terraria/tModLoader/ModSources"
+      ;;
+    *)
+      printf '%s\n' ""
+      ;;
+  esac
+}
+
+python_bin="$(resolve_python)"
+[ -n "$python_bin" ] || fail "Python 3.12+ was not found. Install Python 3.12 or set PYTHON=/path/to/python3.12."
+
+"$python_bin" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' \
+  || fail "$python_bin is not Python 3.12+. Install Python 3.12 or set PYTHON=/path/to/python3.12."
+
+if [ -n "$plugin_data" ]; then
+  mkdir -p "$plugin_data"
+  venv_dir="$plugin_data/venv"
+else
+  venv_dir="$plugin_root/agents/.venv"
+fi
+
+say "Tforge setup"
+say "Plugin root: $plugin_root"
+say "Virtualenv: $venv_dir"
+
+"$python_bin" -m venv "$venv_dir"
+venv_python="$(resolve_venv_python "$venv_dir" || true)"
+[ -n "$venv_python" ] || fail "Virtualenv was created, but no Python executable was found in $venv_dir."
+"$venv_python" -m pip install --upgrade pip
+"$venv_python" -m pip install -r "$plugin_root/agents/requirements.txt"
+
+if command -v npm >/dev/null 2>&1; then
+  if [ -n "$plugin_data" ]; then
+    mkdir -p "$TFORGE_NODE_DEPS_DIR"
+    cp "$plugin_root/agents/pixelsmith/package.json" "$TFORGE_NODE_DEPS_DIR/package.json"
+    if [ -f "$plugin_root/agents/pixelsmith/package-lock.json" ]; then
+      cp "$plugin_root/agents/pixelsmith/package-lock.json" "$TFORGE_NODE_DEPS_DIR/package-lock.json"
+      npm ci --prefix "$TFORGE_NODE_DEPS_DIR"
+    else
+      npm install --prefix "$TFORGE_NODE_DEPS_DIR"
+    fi
+  else
+    if [ -f "$plugin_root/agents/pixelsmith/package-lock.json" ]; then
+      (cd "$plugin_root/agents/pixelsmith" && npm ci)
+    else
+      (cd "$plugin_root/agents/pixelsmith" && npm install)
+    fi
+  fi
+else
+  warn "npm was not found. Install Node.js before generating sprites with Pixelsmith."
+fi
+
+weights_path="$TFORGE_PIXELSMITH_WEIGHTS_PATH"
+if [ ! -f "$weights_path" ]; then
+  if [ "${TFORGE_SKIP_WEIGHT_DOWNLOAD:-}" = "1" ]; then
+    warn "Pixelsmith weights are missing: $weights_path"
+  else
+    say "Downloading Pixelsmith weights..."
+    export TFORGE_PIXELSMITH_WEIGHTS_DIR
+    TFORGE_PIXELSMITH_WEIGHTS_DIR="$(dirname "$TFORGE_PIXELSMITH_WEIGHTS_PATH")"
+    mkdir -p "$TFORGE_PIXELSMITH_WEIGHTS_DIR"
+    (cd "$plugin_root/agents/pixelsmith" && "$venv_python" download_weights.py) \
+      || warn "Weight download failed. Re-run /tforge:setup or run agents/pixelsmith/download_weights.py manually."
+  fi
+fi
+
+mod_sources="$(resolve_mod_sources)"
+if [ -n "$mod_sources" ]; then
+  mkdir -p "$mod_sources"
+  if [ -d "$mod_sources/ForgeConnector" ]; then
+    say "ForgeConnector already exists in ModSources."
+  else
+    cp -R "$plugin_root/mod/ForgeConnector" "$mod_sources/"
+    say "Copied ForgeConnector to: $mod_sources/ForgeConnector"
+  fi
+else
+  warn "Could not determine tModLoader ModSources. Set FORGE_MOD_SOURCES_DIR if auto-discovery fails."
+fi
+
+fal_key="${CLAUDE_PLUGIN_OPTION_fal_key:-${FAL_KEY:-${FAL_API_KEY:-}}}"
+if [ -z "$fal_key" ]; then
+  fal_key="$(read_fal_key_from_env_file "$plugin_root/agents/.env")"
+fi
+if [ -z "$fal_key" ]; then
+  warn "FAL key is not configured. Set the Tforge plugin FAL API key, or set FAL_KEY in agents/.env for repo development."
+fi
+
+say "Setup finished. Restart Claude Code or run /reload-plugins, then run /tforge:doctor."

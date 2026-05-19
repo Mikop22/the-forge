@@ -1,0 +1,17 @@
+{
+  "name": "tforge",
+  "owner": {
+    "name": "Mikop22"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for Tforge Terraria weapon generation."
+  },
+  "description": "Claude Code plugin for generating and live-injecting custom Terraria weapons.",
+  "plugins": [
+    {
+      "name": "tforge",
+      "source": "./",
+      "description": "Generate, compile, sprite, and live-inject custom Terraria weapons from Claude Code."
+    }
+  ]
+}

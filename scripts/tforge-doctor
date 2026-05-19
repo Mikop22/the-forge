@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -u
+
+checks_failed=0
+
+ok() {
+  printf 'OK: %s\n' "$*"
+}
+
+warn() {
+  checks_failed=$((checks_failed + 1))
+  printf 'WARN: %s\n' "$*"
+}
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+. "$script_dir/tforge-lib.sh"
+plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$script_dir/.." && pwd)}"
+plugin_data="${CLAUDE_PLUGIN_DATA:-}"
+set_runtime_paths "$plugin_root" "$plugin_data"
+
+if [ -n "$plugin_data" ]; then
+  venv_dir="$plugin_data/venv"
+else
+  venv_dir="$plugin_root/agents/.venv"
+fi
+
+python_bin="$(resolve_venv_python "$venv_dir" || true)"
+
+printf '%s\n' "Tforge doctor"
+printf '%s\n' "Plugin root: $plugin_root"
+printf '%s\n' "Virtualenv: $venv_dir"
+
+if [ -n "$python_bin" ]; then
+  ok "Python venv exists."
+  "$python_bin" -c 'import dotenv, mcp.server.fastmcp; import PIL, pydantic' >/dev/null 2>&1 \
+    && ok "Python dependencies import." \
+    || warn "Python dependencies are missing or broken. Run /tforge:setup."
+else
+  warn "Python venv is missing. Run /tforge:setup."
+fi
+
+fal_key="${CLAUDE_PLUGIN_OPTION_fal_key:-${FAL_KEY:-${FAL_API_KEY:-}}}"
+if [ -z "$fal_key" ]; then
+  fal_key="$(read_fal_key_from_env_file "$plugin_root/agents/.env")"
+fi
+
+if [ -n "$fal_key" ]; then
+  ok "FAL key is configured."
+else
+  warn "FAL key is missing. Configure the Tforge plugin FAL API key, or set FAL_KEY in agents/.env for repo development."
+fi
+
+if [ -f "$plugin_root/.mcp.json" ] && grep -q 'CLAUDE_PLUGIN_ROOT' "$plugin_root/.mcp.json"; then
+  ok "MCP config is plugin-relative."
+else
+  warn ".mcp.json is missing or not plugin-relative."
+fi
+
+if [ -x "$plugin_root/scripts/tforge-mcp-start" ]; then
+  ok "MCP start script is executable."
+else
+  warn "scripts/tforge-mcp-start is missing or not executable."
+fi
+
+if [ -d "$TFORGE_NODE_DEPS_DIR/node_modules/@fal-ai/client" ]; then
+  ok "Pixelsmith Node dependencies are installed."
+else
+  warn "Pixelsmith Node dependencies are missing. Run /tforge:setup."
+fi
+
+if [ -f "$TFORGE_PIXELSMITH_WEIGHTS_PATH" ]; then
+  ok "Pixelsmith weights are present."
+else
+  warn "Pixelsmith weights are missing. Run /tforge:setup."
+fi
+
+if command -v dotnet >/dev/null 2>&1; then
+  ok "dotnet is installed."
+else
+  warn "dotnet was not found. Install the .NET SDK/runtime used by tModLoader."
+fi
+
+if [ -n "$python_bin" ]; then
+  tmod_path="$(
+    "$python_bin" -c 'import sys; sys.path.insert(0, sys.argv[1]); from core.compilation_harness import find_tmod_path; path = find_tmod_path(); print(path or "")' "$plugin_root/agents" 2>/dev/null || true
+  )"
+  if [ -n "$tmod_path" ]; then
+    ok "tModLoader install found: $tmod_path"
+  else
+    warn "tModLoader install was not found. Set TMODLOADER_PATH to the directory containing tModLoader.dll."
+  fi
+else
+  warn "Skipped tModLoader discovery because Python venv is missing."
+fi
+
+if [ -n "${FORGE_MOD_SOURCES_DIR:-}" ]; then
+  mod_sources="$FORGE_MOD_SOURCES_DIR"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  mod_sources="$HOME/Library/Application Support/Terraria/tModLoader/ModSources"
+elif [ "$(uname -s)" = "Linux" ]; then
+  mod_sources="$HOME/.local/share/Terraria/tModLoader/ModSources"
+else
+  mod_sources=""
+fi
+
+if [ -n "$mod_sources" ] && [ -d "$mod_sources/ForgeConnector" ]; then
+  ok "ForgeConnector is installed in ModSources."
+else
+  warn "ForgeConnector is not installed in ModSources. Run /tforge:setup or set FORGE_MOD_SOURCES_DIR."
+fi
+
+if [ "$checks_failed" -eq 0 ]; then
+  printf '%s\n' "Tforge is ready. Start tModLoader, enable ForgeConnector, then run /tforge:forge simple starter sword."
+else
+  printf '%s\n' "Tforge doctor found $checks_failed issue(s). Fix the warnings above, then rerun /tforge:doctor."
+fi
