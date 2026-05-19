@@ -1,216 +1,51 @@
+## Claude Code plugin that generates, compiles, sprites, and live-injects custom Terraria weapons into tModLoader.
 
-# The Forge
-**A Claude Code skill that drives a local MCP server, which compiles, generates sprites, and live-injects items into Terraria.**
-
-*"a staff that shoots nyan-cat"*
-
+"a magic staff that shoots nyan cat for 0 mana"
 
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
+## Install
 
-## Architecture
-
-```mermaid
-flowchart LR
-    USER([/forge a void pistol<br/>that charges before firing/])
-
-    USER --> SKILL{{Forge skill<br/>orchestrator}}
-
-    SKILL --> TIER[Infer tier 1/2/3<br/>from prompt]
-
-    TIER --> SUBS
-
-    subgraph SUBS[Subagents]
-        direction TB
-        T[Architect-Thesis<br/>3 distinct concepts]
-        M[Architect-Manifest<br/>full spec]
-        C[Coder<br/>C# source]
-        R[Reviewer<br/>deterministic critique]
-        RF[Reference-Finder<br/>only for named IP]
-        SJ[Sprite-Judge<br/>vision pick]
-    end
-
-    SUBS --> MCP{{MCP tools}}
-
-    subgraph MCP[forge MCP server]
-        direction TB
-        S1[forge_compile]
-        S2[forge_generate_sprite]
-        S3[forge_status]
-        S4[forge_inject]
-    end
-
-    MCP --> CONN[ForgeConnector<br/>C# mod, file watcher]
-
-    CONN --> GAME([Item appears in<br/>running Terraria])
-
-    style USER fill:#1f2937,color:#fff,stroke:#111
-    style SKILL fill:#1e3a8a,color:#fff,stroke:#0c1e4f,stroke-width:3px
-    style TIER fill:#0f172a,color:#fff
-    style GAME fill:#065f46,color:#fff,stroke:#022c22,stroke-width:2px
-```
-### Subagent model assignments
-
-| Subagent | Model | Why |
-|---|---|---|
-| Architect-Thesis | Sonnet | Generates 3 distinct concepts from the prompt |
-| Architect-Manifest | Sonnet | Expands the winning concept into a full spec |
-| Coder | Haiku (T1) / Sonnet (T2-3) | Tier 1 is mechanical; T2-3 needs judgment for charge phases, beam lances, etc. |
-| Reviewer | Haiku | Runs a deterministic critique checklist. No design judgment needed. |
-| Reference-Finder | Sonnet | Only triggered for specific named IP (e.g. Nyan Cat). Hard-capped at 2 web searches + 3 fetches. |
-| Sprite-Judge | Opus | Picks the best sprite candidate. Vision quality matters here. |
-
-### Tier inference
-
-The skill picks the lowest tier that fits the prompt. Higher tiers take longer and cost more, so the skill only escalates when the prompt asks for it.
-
-**Tier 1: basic weapons.** A regular sword, bow, or pistol. It hits things. Damage and swing speed only, nothing fancy. Triggered by words like "simple", "basic", "starter", or any prompt that just describes a weapon without special behavior.
-
-**Tier 2: one trick.** The weapon has a single mechanic that makes it interesting. A bow whose arrows home in on enemies. A sword that sets things on fire. A staff whose projectiles bounce off walls. One special behavior on top of a normal weapon.
-
-**Tier 3: spectacles.** The weapon does something dramatic that unfolds over time, or fires multiple things at once. Charging up before releasing a beam. Summoning a swarm of orbiting projectiles. Sweeping arcs, void rifts, multi-stage transformations. Anything that needs more than "the projectile flies forward and hits things" gets bumped here.
-
-## Using `/forge`
-
-Once the MCP server is running and the skill is loaded:
-
-```
-/forge a void pistol that charges before firing
-/forge simple starter sword
-/forge a homing missle staff
-```
-
-The skill will:
-1. Tell you which tier it picked and why
-2. Show you 3 named concepts. Pick one, or say "you choose".
-3. Compile + review in a loop (silent for the first 3 attempts, surfaced after 4/6)
-4. Generate sprite candidates with FLUX.2 Klein
-5. Pick the best item + projectile sprite
-6. Inject and tell you the crafting recipe
-
-## Setup
-
-### Prerequisites
+Prerequisites:
 
 - Terraria with **tModLoader** installed
+- **Claude Code** with the `/plugin` command available
 - **Python** `3.12+`
-- **Claude Code** (or another MCP-capable IDE)
-- API key: `FAL_KEY` (the skill itself runs on your IDE's Claude session)
+- **Node.js/npm**
+- A fal.ai API key
 
-### 1. Clone and install Python deps
+Inside Claude Code:
+
+```text
+/plugin marketplace add Mikop22/the-forge
+/plugin install tforge@tforge
+```
+
+the plugin will then prompt you for a FAL.ai API key. You need this key to access the diffusion model which generates sprites and animation frames.
+
+Run setup and diagnostics:
+
+```text
+/tforge:setup
+/tforge:doctor
+```
+
+`/tforge:setup` installs local Python and Node dependencies, downloads Pixelsmith weights, and copies `ForgeConnector` into your tModLoader `ModSources` directory when it can find it.
+
+In tModLoader, build and enable `ForgeConnector`, enter a world, then run:
+
+```text
+/tforge:forge <describe item here>
+```
+
+For local development without installing from the marketplace:
 
 ```bash
 git clone https://github.com/Mikop22/the-forge.git
-cd the-forge/agents
-python3.12 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+cd the-forge
+claude --plugin-dir .
 ```
 
-The MCP server wrapper at `agents/mcp_server_start.sh` runs out of `agents/.venv`, so the venv path is fixed.
+## Technical Details
 
-### 2. API keys
-
-```bash
-cp agents/.env.example agents/.env
-# edit and fill in FAL_KEY
-```
-
-| Key | Use |
-|-----|-----|
-| `FAL_KEY` | Pixelsmith image generation (`forge_generate_sprite`) |
-
-All LLM calls (concept generation, codegen, review, sprite picking) flow through the forge skill in your IDE, so they bill against your existing Claude Code session. The MCP server itself does not call any LLM.
-
-### 3. Pixelsmith weights
-
-```bash
-cd agents/pixelsmith
-python download_weights.py
-```
-
-### 4. Install `ForgeConnector`
-
-`ForgeConnector` is the tModLoader mod that watches `forge_inject.json` and live-injects items.
-
-1. Copy `mod/ForgeConnector/` into your tModLoader `ModSources` directory:
-   - macOS: `~/Library/Application Support/Terraria/tModLoader/ModSources/`
-   - Windows: `Documents/My Games/Terraria/tModLoader/ModSources/`
-   - Linux: `~/.local/share/Terraria/tModLoader/ModSources/`
-2. Build it from tModLoader's mod tools and enable it in the mod list.
-
-### 5. Restart Claude Code
-
-The `.mcp.json` at the repo root registers the forge MCP server automatically. Restart Claude Code to pick it up. `/mcp` should then show `forge` as connected with 4 tools.
-
-### Optional environment overrides
-
-| Variable | Purpose |
-|---|---|
-| `FORGE_MOD_SOURCES_DIR` | Override ModSources root if auto-discovery fails |
-| `TMODLOADER_PATH` | Point at `tModLoader.dll` if `dotnet` build can't find it |
-
-`mod_sources_dir` in `~/.config/theforge/config.toml` is also honored.
-
-## MCP tools
-
-`agents/mcp_server.py` registers a **FastMCP** server named `forge`:
-
-| Tool | Role |
-|------|------|
-| `forge_status` | Reads `forge_connector_alive.json` and `generation_status.json` to report heartbeat + pipeline stage |
-| `forge_compile` | Stages C# + localization hjson under `agents/.forge_staging/<id>/`, runs `dotnet tModLoader.dll -build`, parses CS####/TML### diagnostics |
-| `forge_generate_sprite` | Runs Pixelsmith audition (FLUX.2 Klein, lora=0.65, guidance=7) and returns candidate paths for the Sprite-Judge to pick from |
-| `forge_inject` | Promotes the staged build into `ForgeGeneratedMod`, copies sprite PNGs, writes `forge_inject.json` for ForgeConnector to consume |
-
-## Supported item types
-
-The codegen path infers `sub_type` from prompt keywords. Substring-trap precedence applies: `pickaxe` beats `axe`, `broadsword` beats `sword`, `shotgun` beats `gun`.
-
-| Class | Sub-types |
-|---|---|
-| Melee | Sword, Broadsword, Shortsword, Spear, Lance |
-| Firearms | Pistol, Shotgun, Rifle, Repeater (uses bullets) |
-| Bows | Bow, Repeater (also crossbow) |
-| Magic | Staff, Wand, Tome, Spellbook (use mana) |
-| Heavy ranged | Launcher (rockets), Cannon (custom) |
-| Tools | Pickaxe, Axe, Hamaxe, Hammer (also deal melee damage) |
-
-All ranged sub-types emit working `Item.shoot` and ammo/mana wiring; tools emit `Item.pick` / `Item.axe` / `Item.hammer` and route through `content_type=Tool` automatically.
-
-## Power tiers
-
-| Tier | Damage | Examples |
-|------|--------|----------|
-| Starter | 8-15 | early-game, wood and iron |
-| Dungeon | 25-40 | post-Skeletron |
-| Hardmode | 45-65 | post-Wall of Flesh |
-| Endgame | 150-300 | post-Moon Lord |
-
-## Reference-aware generation
-
-Some prompts name a specific real-world or copyrighted subject the diffusion model can't generate from text alone (a named anime character's sword, a sports team logo, Nyan Cat). For those, the skill spawns a Reference-Finder that pulls one image and feeds it to Pixelsmith for img2img. Generic fantasy weapons (swords, wands, bows, staffs, orbs, guns) skip the reference step entirely. The Reference-Finder is hard-capped at 2 web searches and 3 fetches to keep token cost predictable.
-
-## Project structure
-
-```text
-the-forge/
-├── .claude/
-│   ├── skills/forge.md           # orchestrator skill (subagent prompts, tier rules)
-│   └── commands/forge.md         # /forge slash command
-├── .mcp.json                     # MCP server registration
-├── agents/
-│   ├── mcp_server.py             # FastMCP: forge_status / compile / sprite / inject
-│   ├── mcp_server_start.sh       # wrapper that runs the venv Python
-│   ├── .venv/                    # local venv (gitignored)
-│   ├── core/                     # paths, staging, hjson, compile harness
-│   ├── pixelsmith/               # FLUX.2 sprite generation + gates
-│   ├── gatekeeper/               # legacy Integrator path (not used by mcp_server)
-│   ├── tests/                    # pytest
-│   ├── qa/                       # corpus, run artifacts
-│   └── requirements.txt
-├── mod/
-│   └── ForgeConnector/           # tModLoader live inject + file watcher
-└── archive/                      # legacy Go TUI + monolithic Python orchestrator
-```
-
-| `ForgeConnector` offline warning | Make sure tModLoader is running with the mod enabled before `/forge` reaches the inject step |
+Architecture, MCP tools, supported item types, environment overrides, project layout, and troubleshooting live in [TECHNICAL.md](TECHNICAL.md).
