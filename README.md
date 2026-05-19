@@ -1,6 +1,6 @@
-## Claude Code plugin that generates, compiles, sprites, and live-injects custom Terraria weapons into tModLoader.
+## A plugin that generates, compiles, sprites, and live-injects custom Terraria weapons into tModLoader.
 
-"a magic staff that shoots nyan cat for 0 mana"
+"magic staff that shoots nyan cat for 0 mana"
 
 https://github.com/user-attachments/assets/b6fb6588-1519-402b-8b05-2df8b91a65f8
 
